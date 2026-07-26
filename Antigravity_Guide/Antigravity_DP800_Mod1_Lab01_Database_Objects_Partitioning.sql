@@ -1,8 +1,9 @@
 -- ====================================================================================
 -- BÀI TẬP VÀ VÍ DỤ THỰC HÀNH KỲ THI DP-800 (MICROSOFT CERTIFIED: AI-ENABLED DATABASE SOLUTIONS)
--- CHUYÊN ĐỀ 1: THIẾT KẾ & PHÁT TRIỂN ĐỐI TƯỢNG CƠ SỞ DỮ LIỆU (DATABASE OBJECTS & PARTITIONING)
+-- PHÂN LOẠI: MODULE 1 — CODE THỰC HÀNH LAB 1
+-- CHUYÊN ĐỀ: BẢNG, CHỈ MỤC, COLUMNSTORE, BẢNG CHUYÊN BIỆT, JSON & PHÂN VÙNG
 -- Tác giả: Microsoft Principal Database Solutions Architect
--- Tên file: Antigravity_DP800_Database_Objects.sql
+-- Tên file: Antigravity_DP800_Mod1_Lab01_Database_Objects_Partitioning.sql
 -- ====================================================================================
 
 USE master;

@@ -1,8 +1,9 @@
 -- ====================================================================================
 -- BÀI TẬP VÀ VÍ DỤ THỰC HÀNH KỲ THI DP-800 (MICROSOFT CERTIFIED: AI-ENABLED DATABASE SOLUTIONS)
--- CHUYÊN ĐỀ 2: PROGRAMMABILITY OBJECTS & ADVANCED T-SQL
+-- PHÂN LOẠI: MODULE 1 — CODE THỰC HÀNH LAB 2
+-- CHUYÊN ĐỀ: VIEWS, FUNCTIONS, PROCEDURES, TRIGGERS, JSON NÂNG CAO, REGEX & FUZZY MATCHING
 -- Tác giả: Microsoft Principal Database Solutions Architect
--- Tên file: Antigravity_DP800_Programmability_and_Advanced_TSQL.sql
+-- Tên file: Antigravity_DP800_Mod1_Lab02_Programmability_Advanced_TSQL.sql
 -- ====================================================================================
 
 USE DP800_Review_DB;
@@ -136,7 +137,7 @@ GO
 */
 
 -- 2.1 Recursive CTE (Truy vấn phân cấp cây / thư mục / quản lý)
-WITH EmployeeHierarchy CTE AS (
+WITH EmployeeHierarchyCTE AS (
     -- Anchor Member
     SELECT EmployeeID, ManagerID, EmployeeName, 1 AS Level
     FROM (VALUES (1, NULL, N'CEO Alice'), (2, 1, N'Manager Bob'), (3, 2, N'Dev Charlie')) AS Emp(EmployeeID, ManagerID, EmployeeName)
@@ -146,10 +147,10 @@ WITH EmployeeHierarchy CTE AS (
     
     -- Recursive Member
     SELECT e.EmployeeID, e.ManagerID, e.EmployeeName, r.Level + 1
-    FROM (VALUES (1, NULL, N'CEO Alice'), (2, 1, N meManager Bob'), (3, 2, N'Dev Charlie')) AS e(EmployeeID, ManagerID, EmployeeName)
-    JOIN CTE r ON e.ManagerID = r.EmployeeID
+    FROM (VALUES (1, NULL, N'CEO Alice'), (2, 1, N'Manager Bob'), (3, 2, N'Dev Charlie')) AS e(EmployeeID, ManagerID, EmployeeName)
+    JOIN EmployeeHierarchyCTE r ON e.ManagerID = r.EmployeeID
 )
-SELECT * FROM CTE;
+SELECT * FROM EmployeeHierarchyCTE;
 GO
 
 -- 2.2 Window Functions Phân Tích Doanh Thu

@@ -1,9 +1,10 @@
 # CẨM NANG CHUYÊN SÂU ÔN THI DP-800: DESIGN & DEVELOP DATABASE SOLUTIONS (35–40%)
 > **Tác giả:** Expert Database Solutions Architect (10+ năm kinh nghiệm Microsoft SQL Server & Azure Data Platform)  
-> **Kỳ thi:** DP-800: Developing AI-Enabled Database Solutions (Cập nhật mới nhất từ tháng 03/2026)  
-> **File đính kèm:**  
-> - 📄 [Antigravity_DP800_Database_Objects.sql](file:///d:/SQL/DP-800%20Microsoft%20SQL%20Server%20AI%20Developer/Antigravity_DP800_Database_Objects.sql)  
-> - 📄 [Antigravity_DP800_Programmability_and_Advanced_TSQL.sql](file:///d:/SQL/DP-800%20Microsoft%20SQL%20Server%20AI%20Developer/Antigravity_DP800_Programmability_and_Advanced_TSQL.sql)
+> **Phân loại:** MODULE 1 — LÝ THUYẾT & MẸO THI  
+> **Kỳ thi:** DP-800: Developing AI-Enabled Database Solutions (Cập nhật mới nhất tháng 03/2026)  
+> **File thực hành SQL đính kèm:**  
+> - 📄 [Antigravity_DP800_Mod1_Lab01_Database_Objects_Partitioning.sql](file:///d:/SQL/DP-800%20Microsoft%20SQL%20Server%20AI%20Developer/Antigravity_DP800_Mod1_Lab01_Database_Objects_Partitioning.sql)  
+> - 📄 [Antigravity_DP800_Mod1_Lab02_Programmability_Advanced_TSQL.sql](file:///d:/SQL/DP-800%20Microsoft%20SQL%20Server%20AI%20Developer/Antigravity_DP800_Mod1_Lab02_Programmability_Advanced_TSQL.sql)
 
 ---
 
@@ -184,22 +185,6 @@ Kỳ thi DP-800 kiểm tra kiến thức thực tế về việc áp dụng AI T
 
 ### 2. GitHub Copilot Instruction Files
 * **Tệp `.github/copilot-instructions.md`:** Tệp cấu hình đặt trong thư mục gốc của SQL Project nhằm định hướng phong cách viết code T-SQL cho AI (VD: "Mọi Stored Procedure phải có `SET XACT_ABORT ON` và dùng `DATETIME2`").
-
----
-
-## 🎯 BẢNG TÓM TẮT THỦ THUẬT LÀM BÀI THI DP-800
-
-1. **Khi nào chọn Columnstore Index?**
-   - Cần chạy báo cáo OLAP trên bảng >1 triệu dòng ➡️ **Clustered Columnstore Index**.
-   - Cần chạy báo cáo OLAP trên bảng OLTP realtime mà không làm chậm OLTP ➡️ **Nonclustered Columnstore Index**.
-2. **Khi nào chọn Temporal vs Ledger?**
-   - Cần xem dữ liệu cũ tại thời điểm quá khứ ➡️ **Temporal Table**.
-   - Cần bảo đảm dữ liệu không bị ai sửa lén (Tamper-proof/Financial Audit) ➡️ **Ledger Table**.
-3. **Khi nào chọn Inline TVF vs Scalar UDF?**
-   - Luôn ưu tiên **Inline TVF (`RETURNS TABLE AS RETURN SELECT...`)** vì hiệu năng vượt trội nhờ khả năng Query Inlining.
-4. **Xử lý Regex & Fuzzy Matching trong T-SQL:**
-   - Dùng `REGEXP_LIKE` cho kiểm tra định dạng (Email, Phone, CCCD).
-   - Dùng `EDIT_DISTANCE_SIMILARITY` cho bài toán loại bỏ dữ liệu trùng lặp mờ (Deduplication).
 
 ---
 *Chúc bạn ôn tập tốt và đạt kết quả tối đa trong kỳ thi DP-800!*
