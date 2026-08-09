@@ -2,146 +2,568 @@
 
 > **Miền 2:** Secure, Optimize, and Deploy Database Solutions (35–40%)  
 > **Chủ đề:** Optimize Database Performance  
-> **Trọng tâm thi:** Query Store (kể cả Secondary Replicas), Execution Plans, Parameter Sniffing, Isolation Levels (RCSI/Snapshot), Resolving Blocking & Deadlocks.
+> **Cập nhật:** 09/08/2026  
+> **Blueprint áp dụng:** DP-800 — Skills measured as of March 12, 2026  
+> **Mục tiêu:** Hiểu nguyên nhân → đo bằng đúng công cụ → chọn biện pháp ít rủi ro nhất.
 
 ---
 
-## 📘 PHẦN 1: LÝ THUYẾT & KIẾN THỨC CỐT LÕI (CORE THEORY)
+## 0. PHẠM VI THI CHÍNH THỨC
 
-### 1. Cấu Hình Cơ Sở Dữ Liệu (Database Configurations)
-- **MAXDOP (Max Degree of Parallelism):** Giới hạn số CPU core sử dụng cho 1 câu truy vấn song song. Tránh đặt MAXDOP quá cao gây CPU contention (CXPACKET wait).
-- **Cost Threshold for Parallelism:** Giá trị ngưỡng chi phí để Query Optimizer chuyển truy vấn sang chạy song song (khuyên dùng 25-50 thay cho mặc định 5).
-- **Read Committed Snapshot Isolation (RCSI):**  
-  Bật RCSI trên CSDL (`READ_COMMITTED_SNAPSHOT ON`) để các thao tác đọc (`SELECT`) sử dụng **Row Versioning** trong TempDB. **Reader không chặn Writer, Writer không chặn Reader** ➔ Giải quyết triệt để vấn đề Blocking trong OLTP.
+DP-800 yêu cầu:
 
-### 2. Isolation Levels & Concurrency Controls
-- **Read Uncommitted (Dirty Read):** Đọc dữ liệu chưa commit (nhiễm bẩn).
-- **Read Committed (Mặc định):** Đọc dữ liệu đã commit, có thể bị Non-repeatable read.
-- **Repeatable Read:** Giữ Shared Lock đến cuối transaction ➔ Ngăn sửa đổi dòng đã đọc.
-- **Serializable:** Giữ Range Lock ➔ Ngăn dòng mới chèn vào (Ngăn Phantom Read).
-- **Snapshot Isolation:** Sử dụng phiên bản dòng trong TempDB ➔ Bảo đảm tính nhất quán giao dịch mà không bị lock.
+1. **Recommend database configurations**.
+2. Bảo toàn data integrity/consistency bằng **transaction isolation levels** và concurrency controls.
+3. Đánh giá hiệu năng bằng **execution plans, DMVs, Query Store, Query Performance Insight**.
+4. Xác định và xử lý **blocking và deadlocks**.
 
-### 3. Đánh Giá Hiệu Năng Truy Vấn (Query Performance Evaluation)
-- **Execution Plan Analysis:**
-  - *Clustered Index Seek vs Scan:* Seek là truy cập trực tiếp cực nhanh; Scan là đọc toàn bộ index.
-  - *Key Lookup / Bookmark Lookup:* Xảy ra khi Nonclustered Index thiếu cột ➔ Cần bổ sung cột vào mệnh đề `INCLUDE`.
-  - *Join Operators:* **Nested Loops** (Tốt cho tập dữ liệu nhỏ), **Hash Match** (Tốt cho dữ liệu lớn chưa sắp xếp), **Merge Join** (Tốt cho dữ liệu lớn đã sắp xếp sẵn).
-- **Query Store & Query Store trên Secondary Replicas (Azure SQL / SQL Server 2022+):**
-  - Query Store ghi lại lịch sử truy vấn, execution plan và chỉ số thời gian chạy.
-  - *Plan Forcing:* Bắt buộc SQL Server luôn dùng một Execution Plan tốt nhất (`sp_query_store_force_plan`).
-  - *Query Store Secondary Replicas (GA):* Telemetry của các truy vấn chạy trên **Read-Scale Out Secondary Replicas** được tự động hợp nhất về Query Store ở Primary Database!
-- **Dynamic Management Views (DMVs):**
-  - `sys.dm_exec_requests` & `sys.dm_exec_sql_text`: Xem các truy vấn đang chạy thực tế.
-  - `sys.dm_db_index_usage_stats`: Phát hiện index thừa/không sử dụng.
-  - `sys.dm_tran_locks`: Chẩn đoán Lock và Blocking.
-
-### 4. Xử Lý Hiện Tượng Parameter Sniffing, Blocking & Deadlocks
-- **Parameter Sniffing:** Xảy ra khi SQL Server biên dịch Execution Plan dựa trên giá trị tham số của lần chạy đầu tiên. Khi tham số lần sau thay đổi bản chất dữ liệu, plan cũ trở nên cực kỳ chậm.
-  - *5 Cách xử lý:*
-    1. Dùng hint `OPTION (RECOMPILE)` trong SQL.
-    2. Dùng hint `OPTION (OPTIMIZE FOR (@Param = 'Val'))`.
-    3. Thêm biến cục bộ (Local Variable) trong Stored Procedure.
-    4. Dùng **Query Store Hints** ép hint mà không cần sửa mã nguồn ứng dụng.
-    5. Tính năng **Parameter Sensitive Plan (PSP) Optimization** trong SQL Server 2022 (tự động tạo nhiều plan cho 1 SP).
-- **Blocking & Deadlocks:**
-  - *Blocking:* Truy vấn A giữ Lock khiến truy vấn B phải chờ. Giải pháp: Rút ngắn transaction, bật RCSI.
-  - *Deadlock:* Truy vấn A chờ B, B lại chờ A ➔ SQL Server tự động kill một giao dịch (Deadlock Victim). Giải pháp: Truy cập các bảng theo thứ tự nhất quán trong mọi Stored Procedure.
+**Nguồn chuẩn:**
+- [DP-800 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-800)
+- [Microsoft Learn — Optimize database performance](https://learn.microsoft.com/en-us/training/modules/optimize-database-performance/)
 
 ---
 
-## 💻 PHẦN 2: THỰC HÀNH T-SQL (HANDS-ON LABS)
+# PHẦN 1 — DATABASE CONFIGURATION
+
+## 1. Azure SQL purchasing/service tiers — phải biết để “recommend configuration”
+
+### 1.1 DTU vs vCore
+
+- **DTU model:** gộp CPU/memory/I/O vào DTU; đơn giản nhưng ít tách bạch.
+- **vCore model:** chọn compute rõ hơn, phù hợp phần lớn thiết kế hiện đại và dễ map nhu cầu tài nguyên/licensing hơn.
+
+### 1.2 Service tiers theo vCore
+
+| Tier | Ý nghĩa dễ nhớ | Scenario |
+|---|---|---|
+| General Purpose | cân bằng cost/performance | workload phổ thông |
+| Business Critical | low latency + high availability/IO | OLTP critical |
+| Hyperscale | storage/scale lớn, kiến trúc scale-out | DB rất lớn / tăng trưởng nhanh |
+
+### 1.3 Provisioned vs Serverless
+
+- **Provisioned:** compute luôn sẵn sàng; workload ổn định.
+- **Serverless:** auto-scale/auto-pause theo cấu hình hỗ trợ; workload gián đoạn, khó đoán, ưu tiên tiết kiệm.
+
+> Exam không chỉ hỏi “query chậm sửa index gì”; có thể hỏi **resource/service tier** không phù hợp.
+
+Tham khảo: [Azure SQL Database purchasing models](https://learn.microsoft.com/en-us/azure/azure-sql/database/purchasing-models?view=azuresql)
+
+---
+
+## 2. MAXDOP, compatibility level, automatic tuning và ADR
+
+### 2.1 MAXDOP
+
+`MAXDOP` giới hạn số scheduler dùng cho một parallel plan. Không có một con số “25–50” hay “MAXDOP = X” đúng cho mọi hệ thống.
+
+Database-scoped:
 
 ```sql
--- ============================================================================
--- LAB 5.1: BẬT RCSI ĐỂ GIẢM BLOCKING & QUERY STORE
--- ============================================================================
-USE master;
+ALTER DATABASE SCOPED CONFIGURATION
+SET MAXDOP = 8;
+GO
+```
+
+**Exam principle:** chọn theo workload/topology; tránh “tăng MAXDOP = query luôn nhanh hơn”.
+
+### 2.2 Compatibility level
+
+Compatibility level mở/đóng nhiều optimizer behavior mới.
+
+```sql
+SELECT name, compatibility_level
+FROM sys.databases
+WHERE name = DB_NAME();
 GO
 
--- 1. Bật Read Committed Snapshot Isolation (RCSI)
-ALTER DATABASE tempdb SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;
+ALTER DATABASE CURRENT
+SET COMPATIBILITY_LEVEL = 170;
+GO
+```
+
+Với SQL Server/Azure SQL mới, compatibility level 170 gắn với các optimizer improvements mới. **Không nâng production chỉ để “lấy tính năng” mà không test regression.**
+
+### 2.3 Automatic tuning — Azure SQL
+
+Các lựa chọn đáng nhớ:
+- `FORCE_LAST_GOOD_PLAN`
+- `CREATE_INDEX`
+- `DROP_INDEX`
+
+Ví dụ:
+
+```sql
+ALTER DATABASE CURRENT
+SET AUTOMATIC_TUNING (FORCE_LAST_GOOD_PLAN = ON);
+GO
+```
+
+Điểm thi: automatic tuning có thể tự khắc phục plan regression, nhưng vẫn phải hiểu Query Store/telemetry.
+
+### 2.4 Optimize for ad hoc workloads
+
+Khi có quá nhiều one-off ad hoc plans:
+
+```sql
+ALTER DATABASE SCOPED CONFIGURATION
+SET OPTIMIZE_FOR_AD_HOC_WORKLOADS = ON;
+GO
+```
+
+### 2.5 Accelerated Database Recovery (ADR)
+
+ADR giúp recovery/rollback nhanh hơn bằng cơ chế versioning. Trên Azure SQL Database, ADR là phần nền tảng của dịch vụ. **Persistent Version Store (PVS)** nằm trong user database, khác row version store truyền thống trong `tempdb`.
+
+Tham khảo: [Accelerated Database Recovery](https://learn.microsoft.com/en-us/sql/relational-databases/accelerated-database-recovery-concepts?view=sql-server-ver17)
+
+---
+
+# PHẦN 2 — TRANSACTION ISOLATION & CONCURRENCY
+
+## 3. Bảng anomaly cần thuộc
+
+| Isolation | Dirty read | Non-repeatable read | Phantom | Cơ chế dễ nhớ |
+|---|---:|---:|---:|---|
+| READ UNCOMMITTED | Có | Có | Có | đọc không chờ committed |
+| READ COMMITTED | Không | Có | Có | mặc định truyền thống |
+| REPEATABLE READ | Không | Không | Có | giữ shared locks lâu hơn |
+| SERIALIZABLE | Không | Không | Không | range locks, chặt nhất |
+| SNAPSHOT | Không | Không | Không theo transaction snapshot | row versions |
+| RCSI | Không | Có thể thấy thay đổi giữa statement | Có thể | READ COMMITTED nhưng mỗi statement đọc snapshot |
+
+### 3.1 RCSI ≠ SNAPSHOT
+
+**RCSI**
+- bật ở database.
+- transaction vẫn dùng `READ COMMITTED`.
+- mỗi statement đọc committed row version phù hợp.
+- giảm mạnh **reader–writer blocking**.
+
+```sql
+ALTER DATABASE YourDatabase
+SET READ_COMMITTED_SNAPSHOT ON
+WITH ROLLBACK IMMEDIATE;
+GO
+```
+
+**SNAPSHOT**
+- bật quyền sử dụng ở database.
+- session/transaction phải chọn `SET TRANSACTION ISOLATION LEVEL SNAPSHOT`.
+- snapshot nhất quán ở phạm vi transaction.
+
+```sql
+ALTER DATABASE YourDatabase
+SET ALLOW_SNAPSHOT_ISOLATION ON;
 GO
 
--- 2. Bật Query Store trên Database
-ALTER DATABASE tempdb SET QUERY_STORE = ON (
+SET TRANSACTION ISOLATION LEVEL SNAPSHOT;
+BEGIN TRAN;
+
+SELECT ...;
+-- các statement trong transaction dùng transaction snapshot
+
+COMMIT;
+GO
+```
+
+### Bẫy rất quan trọng
+
+**RCSI không “xóa sạch mọi blocking”.** Nó chủ yếu giảm reader–writer blocking. Hai writer cùng sửa một row vẫn có thể block nhau; schema locks và các contention khác vẫn tồn tại.
+
+### 3.2 Optimized locking — Azure SQL
+
+Optimized locking giảm lock memory/lock footprint bằng Transaction ID locking và Lock After Qualification, phối hợp tốt với RCSI. Đừng nhầm nó với “không còn lock”.
+
+Tham khảo: [Optimized locking in Azure SQL Database](https://learn.microsoft.com/en-us/azure/azure-sql/database/optimized-locking-overview?view=azuresql)
+
+---
+
+# PHẦN 3 — EXECUTION PLANS
+
+## 4. Estimated vs Actual
+
+- **Estimated plan:** optimizer estimate; query không cần thực thi để lấy runtime metrics.
+- **Actual plan:** có runtime metrics sau khi chạy; dùng để so estimate vs actual.
+
+### Operator mindset
+
+- **Index Seek** thường tốt khi chọn ít row, nhưng seek không tự động tốt nếu phải lookup hàng triệu lần.
+- **Scan** không tự động xấu; scan có thể là lựa chọn đúng khi cần phần lớn bảng hoặc columnstore scan.
+- **Key Lookup** đáng chú ý khi lặp rất nhiều; có thể thêm `INCLUDE` hoặc thiết kế index khác.
+- **Sort/Hash spill** và warning → xem memory grant/cardinality.
+- Estimate lệch xa actual → nghĩ đến statistics/cardinality/parameter sensitivity.
+
+### Covering index example
+
+```sql
+CREATE INDEX IX_Orders_Customer_OrderDate
+ON dbo.Orders(CustomerId, OrderDate)
+INCLUDE (Status, TotalAmount);
+GO
+```
+
+Không tạo index chỉ vì “Missing Index hint nói vậy”. Phải xét write overhead, index overlap và workload.
+
+Tham khảo: [Display and save execution plans](https://learn.microsoft.com/en-us/sql/relational-databases/performance/display-and-save-execution-plans?view=sql-server-ver17)
+
+---
+
+# PHẦN 4 — DMVs
+
+## 5. Truy vấn đang chạy và blocking chain
+
+```sql
+SELECT
+    r.session_id,
+    r.status,
+    r.command,
+    r.wait_type,
+    r.wait_time,
+    r.blocking_session_id,
+    DB_NAME(r.database_id) AS database_name,
+    t.text AS sql_text
+FROM sys.dm_exec_requests AS r
+CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) AS t
+WHERE r.session_id <> @@SPID
+ORDER BY r.blocking_session_id DESC, r.session_id;
+GO
+```
+
+### Top cached queries theo CPU trung bình
+
+```sql
+SELECT TOP (20)
+    qs.execution_count,
+    qs.total_worker_time,
+    qs.total_worker_time / NULLIF(qs.execution_count, 0) AS avg_cpu,
+    qs.total_logical_reads / NULLIF(qs.execution_count, 0) AS avg_reads,
+    SUBSTRING
+    (
+        st.text,
+        (qs.statement_start_offset / 2) + 1,
+        (
+            (
+                CASE qs.statement_end_offset
+                    WHEN -1 THEN DATALENGTH(st.text)
+                    ELSE qs.statement_end_offset
+                END
+                - qs.statement_start_offset
+            ) / 2
+        ) + 1
+    ) AS statement_text
+FROM sys.dm_exec_query_stats AS qs
+CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS st
+ORDER BY avg_cpu DESC;
+GO
+```
+
+### Locks
+
+```sql
+SELECT *
+FROM sys.dm_tran_locks;
+GO
+```
+
+**Bẫy:** DMVs thường là “current/cache state”; Query Store cung cấp lịch sử bền vững hơn cho regression analysis.
+
+---
+
+# PHẦN 5 — QUERY STORE & QUERY PERFORMANCE INSIGHT
+
+## 6. Query Store
+
+Query Store lưu:
+- query text/identity,
+- execution plans,
+- runtime statistics,
+- wait statistics (nếu capture),
+- lịch sử theo thời gian.
+
+### Enable/configure trên USER DATABASE
+
+> Không dùng `tempdb` làm lab Query Store.
+
+```sql
+ALTER DATABASE YourDatabase
+SET QUERY_STORE = ON
+(
     OPERATION_MODE = READ_WRITE,
     DATA_FLUSH_INTERVAL_SECONDS = 60,
-    INTERVAL_LENGTH_MINUTES = 5
+    INTERVAL_LENGTH_MINUTES = 15
 );
 GO
 
--- ============================================================================
--- LAB 5.2: XỬ LÝ PARAMETER SNIFFING BẰNG QUERY STORE HINTS (KHÔNG SỬA CODE)
--- ============================================================================
--- Trường hợp SP bị Parameter Sniffing
-CREATE PROCEDURE dbo.sp_GetCustomerOrders @CustomerId INT
-AS
-BEGIN
-    SELECT OrderId, OrderDate, TotalAmount
-    FROM dbo.Orders
-    WHERE CustomerId = @CustomerId;
-END;
+ALTER DATABASE YourDatabase
+SET QUERY_STORE
+(
+    WAIT_STATS_CAPTURE_MODE = ON
+);
+GO
+```
+
+### Force/unforce plan
+
+```sql
+EXEC sys.sp_query_store_force_plan
+    @query_id = 123,
+    @plan_id = 456;
 GO
 
--- Áp dụng Query Store Hint ép Recompile mà không cần sửa SP
-EXEC sys.sp_query_store_set_hints 
-    @query_id = 42, 
-    @query_hint = N'OPTION (RECOMPILE)';
+EXEC sys.sp_query_store_unforce_plan
+    @query_id = 123,
+    @plan_id = 456;
+GO
+```
+
+### Query Store hints — sửa behavior mà không đổi source code
+
+```sql
+EXEC sys.sp_query_store_set_hints
+    @query_id = 123,
+    @query_hints = N'OPTION(RECOMPILE)';
 GO
 
--- ============================================================================
--- LAB 5.3: TRUY VẤN DMVS CHẨN ĐOÁN QUERY CHẬM & BLOCKING
--- ============================================================================
--- Xem Top 10 Truy vấn tốn CPU nhất trong Cache
-SELECT TOP (10)
-    qs.total_worker_time / qs.execution_count AS AvgCPU_Time,
-    qs.execution_count,
-    qs.total_logical_reads / qs.execution_count AS AvgLogicalReads,
-    SUBSTRING(st.text, (qs.statement_start_offset/2)+1,
-        ((CASE qs.statement_end_offset
-            WHEN -1 THEN DATALENGTH(st.text)
-            ELSE qs.statement_end_offset
-         END - qs.statement_start_offset)/2) + 1) AS QueryText
-FROM sys.dm_exec_query_stats AS qs
-CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS st
-ORDER BY AvgCPU_Time DESC;
+EXEC sys.sp_query_store_clear_hints
+    @query_id = 123;
+GO
+```
+
+> **Cú pháp cần nhớ:** tham số hiện hành là `@query_hints` (số nhiều).
+
+### Query Store on readable secondaries
+
+SQL Server/Azure SQL hỗ trợ thu thập workload trên readable secondary trong các cấu hình/version được hỗ trợ; runtime information được đưa về Query Store của primary để lưu trữ. Các khả năng hint/replica-specific phụ thuộc phiên bản — đặc biệt SQL Server 2025 bổ sung khả năng phong phú hơn.
+
+Tham khảo:
+- [Monitor performance with Query Store](https://learn.microsoft.com/en-us/sql/relational-databases/performance/monitoring-performance-by-using-the-query-store?view=sql-server-ver17)
+- [Query Store hints](https://learn.microsoft.com/en-us/sql/relational-databases/performance/query-store-hints?view=sql-server-ver17)
+- [Query Store for readable secondaries](https://learn.microsoft.com/en-us/sql/relational-databases/performance/query-store-for-secondary-replicas?view=sql-server-ver17)
+
+---
+
+## 7. Query Performance Insight (QPI)
+
+QPI là trải nghiệm trong Azure portal dùng Query Store data để:
+- thấy top resource-consuming queries,
+- theo dõi CPU/duration/executions theo thời gian,
+- tìm query cần tune.
+
+**Nếu câu hỏi nói “Azure portal, identify top queries visually without writing DMV query” → nghĩ đến Query Performance Insight.**
+
+Tham khảo: [Query Performance Insight](https://learn.microsoft.com/en-us/azure/azure-sql/database/query-performance-insight-use?view=azuresql)
+
+---
+
+# PHẦN 6 — PARAMETER SENSITIVITY
+
+## 8. Parameter sniffing / Parameter Sensitive Plan (PSP)
+
+Classic parameter sniffing:
+1. SP compile với parameter A.
+2. Optimizer cache plan tốt cho A.
+3. Parameter B có data distribution rất khác.
+4. Reuse plan A → chậm.
+
+### Các lựa chọn
+
+```sql
+-- Chỉ statement này compile lại mỗi lần
+SELECT ...
+FROM dbo.Orders
+WHERE CustomerId = @CustomerId
+OPTION (RECOMPILE);
+GO
+```
+
+```sql
+-- Dùng khi bạn có giá trị đại diện rõ ràng
+OPTION (OPTIMIZE FOR (@CustomerId = 100));
+```
+
+Hoặc **Query Store Hint** nếu không sửa code.
+
+**PSP Optimization** (compatibility level phù hợp, SQL Server 2022+) có thể tạo nhiều plan variants cho parameter-sensitive equality predicates thay vì ép một plan cho mọi distribution.
+
+**SQL Server 2025 / compatibility 170:** thêm optimizer enhancements như Optional Parameter Plan Optimization (OPPO) cho một số optional predicate patterns. Đừng dùng kiến thức này thay cho việc hiểu Query Store/PSP cơ bản.
+
+Tham khảo: [Parameter Sensitive Plan optimization](https://learn.microsoft.com/en-us/sql/relational-databases/performance/parameter-sensitive-plan-optimization?view=sql-server-ver17)
+
+---
+
+# PHẦN 7 — BLOCKING & DEADLOCKS
+
+## 9. Blocking
+
+Blocking không đồng nghĩa với bug; lock chờ là phần bình thường của concurrency. Vấn đề là **blocking kéo dài / chain lớn / head blocker không hợp lý**.
+
+### Checklist xử lý
+
+1. Tìm `blocking_session_id`.
+2. Xác định head blocker.
+3. Xem transaction có mở quá lâu không.
+4. Kiểm tra index/query có giữ lock trên quá nhiều row không.
+5. Rút ngắn transaction.
+6. Cân nhắc RCSI nếu vấn đề là reader–writer.
+7. Không mặc định dùng `NOLOCK` vì dirty/inconsistent reads.
+
+`SET XACT_ABORT ON` thường giúp transaction tự rollback khi runtime error thích hợp, tránh connection bỏ lại transaction chưa kết thúc:
+
+```sql
+SET XACT_ABORT ON;
+BEGIN TRY
+    BEGIN TRAN;
+
+    -- DML
+
+    COMMIT;
+END TRY
+BEGIN CATCH
+    IF XACT_STATE() <> 0
+        ROLLBACK;
+    THROW;
+END CATCH;
 GO
 ```
 
 ---
 
-## 📝 PHẦN 3: CÂU HỎI THI THỬ & TÌNH HUỐNG (MOCK TEST QUESTIONS)
+## 10. Deadlocks
 
-#### Question 1 (Query Store Read-Scale Out Scenario):
-**Scenario:** Your Azure SQL Database uses Read-Scale Out to offload read-only reporting queries to a Secondary Replica. Report users complain that certain queries running on the Secondary Replica are experiencing sudden performance degradation. You want to use Query Store to analyze execution plan regressions for queries executed on the Secondary Replica. Where should you look for this Query Store telemetry?
-- A. Connect to the Primary Database and open Query Store.
-- B. Connect to the TempDB of the Secondary Replica and query DMVs.
-- C. Query Store is unavailable on Secondary Replicas and cannot capture secondary workload data.
-- D. Enable Extended Events on the Client Application Machine.
+Deadlock = cycle:
+- T1 giữ A, chờ B.
+- T2 giữ B, chờ A.
+- SQL chọn một **victim**, trả lỗi 1205.
 
-**👉 Correct Answer: A**  
-*Explanation (Giải thích):* Trong Azure SQL Database và SQL Server 2022+, tính năng **Query Store for Secondary Replicas** đã GA. Toàn bộ thông tin telemetry và execution plan của các câu truy vấn chạy trên Secondary Replica sẽ tự động được hợp nhất (consolidate) về **Query Store nằm tại Primary Database**.
+### Cách giảm
+
+- Các code path truy cập object theo **cùng thứ tự**.
+- Transaction ngắn.
+- Index tốt để giảm rows/locks.
+- Retry ở application cho lỗi 1205.
+- Capture deadlock graph, không đoán.
+
+### Database-scoped Extended Events cho Azure SQL
+
+```sql
+CREATE EVENT SESSION DP800_Deadlocks
+ON DATABASE
+ADD EVENT sqlserver.database_xml_deadlock_report
+ADD TARGET package0.ring_buffer;
+GO
+
+ALTER EVENT SESSION DP800_Deadlocks
+ON DATABASE
+STATE = START;
+GO
+```
+
+Kiểm tra session/target:
+
+```sql
+SELECT *
+FROM sys.dm_xe_database_sessions;
+GO
+
+SELECT *
+FROM sys.dm_xe_database_session_targets;
+GO
+```
+
+Tham khảo: [Deadlocks guide](https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-deadlocks-guide?view=sql-server-ver17)
 
 ---
 
-#### Question 2 (Parameter Sniffing Resolution Scenario):
-**Scenario:** A critical stored procedure `dbo.GetOrdersByDate` exhibits severe performance fluctuations. When executed with a date range returning 5 rows, it runs in 10 milliseconds. However, when executed with a date range returning 500,000 rows, it locks up the database due to an inefficient plan cached from the small parameter run. You cannot modify the application source code calling the stored procedure. How can you resolve this Parameter Sniffing issue?
-- A. Enable Dynamic Data Masking on the date column.
-- B. Use `sp_query_store_set_hints` to apply `OPTION (RECOMPILE)` directly to the query ID in Query Store.
-- C. Drop and recreate the Primary Key.
-- D. Set the database isolation level to READ UNCOMMITTED.
+# PHẦN 8 — DECISION TABLE ĐI THI
 
-**👉 Correct Answer: B**  
-*Explanation (Giải thích):* Khi không thể sửa mã nguồn ứng dụng (application code), công cụ **Query Store Hints** (`sp_query_store_set_hints`) cho phép DBA can thiệp và gán trực tiếp query hint (như `OPTION (RECOMPILE)` hoặc `OPTIMIZE FOR`) vào Query ID đã ghi nhận trong Query Store.
+| Scenario | Công cụ/giải pháp đầu tiên nên nghĩ |
+|---|---|
+| Query regression sau deployment | Query Store, compare plans, last good plan |
+| Không sửa app code nhưng cần hint | Query Store Hints |
+| Reader block writer, dirty read bị cấm | RCSI |
+| Writer block writer | RCSI không đủ; tối ưu transaction/index/concurrency |
+| Top queries trong Azure Portal | Query Performance Insight |
+| “Query đang chạy ngay bây giờ” | DMVs |
+| Cần historical plans/runtime | Query Store |
+| Estimate lệch actual | Statistics/cardinality/parameter sensitivity |
+| Same SP nhanh/chậm tùy parameter | PSP/Query Store/recompile strategy |
+| Deadlock | deadlock graph/XE + consistent access order |
+| Azure workload quá lớn so với service tier | scale/tier/resource configuration, không chỉ index |
+| Ad hoc one-time plans làm plan cache phình | `OPTIMIZE_FOR_AD_HOC_WORKLOADS` |
 
 ---
 
-#### Question 3 (Concurrency & Blocking Mitigation Scenario):
-**Scenario:** An OLTP database suffers from severe blocking between long-running `SELECT` reporting queries and frequent `UPDATE` transactions. Modifying the queries to include `WITH (NOLOCK)` is rejected by the compliance team because dirty reads are unacceptable. What database configuration change eliminates reader-writer blocking while maintaining read consistency?
-- A. Set `MAXDOP = 1` on the database level.
-- B. Enable `READ_COMMITTED_SNAPSHOT` (RCSI) on the database.
-- C. Rebuild all indexes with `DATA_COMPRESSION = PAGE`.
-- D. Change the database compatibility level to SQL Server 2014.
+# PHẦN 9 — MOCK QUESTIONS
 
-**👉 Correct Answer: B**  
-*Explanation (Giải thích):* Bật **Read Committed Snapshot Isolation (RCSI)** giúp SQL Server sử dụng công nghệ Row Versioning trong TempDB cho truy vấn `SELECT`. Người đọc (Reader) đọc phiên bản dữ liệu đã commit gần nhất mà không cần xin Lock, loại bỏ hoàn toàn hiện tượng Reader bị Writer chặn (và ngược lại) mà không bị Dirty Read như `NOLOCK`.
+### Câu 1
+Reporting `SELECT` block OLTP `UPDATE`, nhưng compliance cấm dirty reads. Chọn?
+
+**Đáp án:** RCSI.
+
+### Câu 2
+Sau khi bật RCSI, hai transaction cùng update một Order vẫn block. Có phải RCSI lỗi?
+
+**Đáp án:** Không. Writer–writer blocking vẫn có thể xảy ra.
+
+### Câu 3
+Bạn không sửa được application code nhưng muốn `OPTION(RECOMPILE)` cho query đã có trong Query Store.
+
+**Đáp án:** `sys.sp_query_store_set_hints` với `@query_hints`.
+
+### Câu 4
+Cần xem query nào tiêu thụ nhiều CPU nhất theo lịch sử trong Azure portal.
+
+**Đáp án:** Query Performance Insight / Query Store tùy wording; nếu “portal visualization” → QPI.
+
+### Câu 5
+Execution plan có Scan. Có chắc phải thêm index?
+
+**Đáp án:** Không. Scan có thể tối ưu khi cần nhiều rows; phải xét cardinality/cost/workload.
+
+### Câu 6
+Deadlock xảy ra giữa hai SP do chúng update bảng theo thứ tự ngược nhau.
+
+**Đáp án:** Chuẩn hóa thứ tự truy cập object, rút ngắn transaction và capture deadlock graph để xác nhận.
+
+### Câu 7
+Query Store database chuyển READ_ONLY vì chạm quota.
+
+**Đáp án:** Kiểm tra `sys.database_query_store_options`, retention/max size/cleanup và cấu hình lại phù hợp.
+
+### Câu 8
+Workload intermittent, có thời gian dài idle và muốn giảm compute cost trên tier hỗ trợ.
+
+**Đáp án:** Cân nhắc serverless.
+
+---
+
+# PHẦN 10 — CHECKLIST “EXAM READY”
+
+- [ ] Phân biệt DTU/vCore, General Purpose/Business Critical/Hyperscale.
+- [ ] Phân biệt provisioned/serverless.
+- [ ] Giải thích MAXDOP mà không đưa “magic number”.
+- [ ] Phân biệt RCSI và SNAPSHOT.
+- [ ] Biết RCSI không loại writer–writer blocking.
+- [ ] Đọc estimated vs actual plan; Seek/Scan/Lookup.
+- [ ] Dùng DMVs để tìm current requests/blocker.
+- [ ] Enable Query Store trên user database.
+- [ ] Force/unforce plan và dùng Query Store Hint.
+- [ ] Nhớ tham số `@query_hints`.
+- [ ] Biết Query Performance Insight dùng khi nào.
+- [ ] Giải thích parameter sniffing/PSP.
+- [ ] Capture và xử lý deadlock.
+- [ ] Biết automatic tuning/ADR/optimized locking ở mức chọn scenario.
+
+---
+
+# TÀI LIỆU THAM KHẢO
+
+1. [DP-800 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-800)
+2. [Optimize database performance — Microsoft Learn](https://learn.microsoft.com/en-us/training/modules/optimize-database-performance/)
+3. [Query Store](https://learn.microsoft.com/en-us/sql/relational-databases/performance/monitoring-performance-by-using-the-query-store?view=sql-server-ver17)
+4. [Query Store hints](https://learn.microsoft.com/en-us/sql/relational-databases/performance/query-store-hints?view=sql-server-ver17)
+5. [Query Performance Insight](https://learn.microsoft.com/en-us/azure/azure-sql/database/query-performance-insight-use?view=azuresql)
+6. [Automatic tuning](https://learn.microsoft.com/en-us/azure/azure-sql/database/automatic-tuning-overview?view=azuresql)
+7. [Optimized locking](https://learn.microsoft.com/en-us/azure/azure-sql/database/optimized-locking-overview?view=azuresql)
+8. [Deadlocks guide](https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-deadlocks-guide?view=sql-server-ver17)
