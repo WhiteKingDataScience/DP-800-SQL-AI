@@ -34,20 +34,28 @@ DP-800 yêu cầu:
 
 ### 1.2 Service tiers theo vCore
 
-| Tier | Ý nghĩa dễ nhớ | Scenario |
+| Tier | Storage/HA hiện hành | Chọn khi |
 |---|---|---|
-| General Purpose | cân bằng cost/performance | workload phổ thông |
-| Business Critical | low latency + high availability/IO | OLTP critical |
-| Hyperscale | storage/scale lớn, kiến trúc scale-out | DB rất lớn / tăng trưởng nhanh |
+| General Purpose | remote premium storage, thường 5–10 ms; 1–4 TB; không có built-in read scale-out replica | cần cost/performance cân bằng, workload phổ thông |
+| Business Critical | local SSD, thường 1–2 ms; 1–4 TB; ba secondary replicas và một read-only replica không tính thêm compute | OLTP cần I/O latency thấp, failover nhanh hoặc offload một read workload |
+| Hyperscale | compute/storage tách rời + local SSD cache; tự tăng storage đến 128 TB; có thể cấu hình nhiều HA/read replicas | workload mới/modernized cần scale storage/read/HA linh hoạt, không chỉ database “đã rất lớn” |
+
+> **Cập nhật quan trọng:** Microsoft hiện mô tả Hyperscale là tier được khuyến nghị và mặc định cho các OLTP/HTAP workload mới hoặc đang hiện đại hóa. Tuy vậy, không chọn máy móc: General Purpose vẫn phù hợp khi ưu tiên chi phí; Business Critical phù hợp khi cần local-SSD latency/In-Memory OLTP. Các giới hạn còn phụ thuộc hardware/region/resource limit cụ thể.
 
 ### 1.3 Provisioned vs Serverless
 
 - **Provisioned:** compute luôn sẵn sàng; workload ổn định.
-- **Serverless:** auto-scale/auto-pause theo cấu hình hỗ trợ; workload gián đoạn, khó đoán, ưu tiên tiết kiệm.
+- **Serverless:** auto-scale và tính compute theo mức sử dụng từng giây; phù hợp **single database** có workload gián đoạn, khó đoán và chịu được warm-up.
+
+Serverless hiện có trên **General Purpose và Hyperscale**, không có trên Business Critical; chỉ **General Purpose serverless** hỗ trợ auto-pause/auto-resume. Vì vậy, “serverless” không đồng nghĩa “database chắc chắn auto-pause”. Khi paused, compute cost bằng 0 nhưng storage vẫn tính phí; ứng dụng phải có retry logic cho quá trình resume.
 
 > Exam không chỉ hỏi “query chậm sửa index gì”; có thể hỏi **resource/service tier** không phù hợp.
 
-Tham khảo: [Azure SQL Database purchasing models](https://learn.microsoft.com/en-us/azure/azure-sql/database/purchasing-models?view=azuresql)
+Tham khảo:
+
+- [Azure SQL Database purchasing models](https://learn.microsoft.com/en-us/azure/azure-sql/database/purchasing-models?view=azuresql)
+- [vCore service tiers](https://learn.microsoft.com/en-us/azure/azure-sql/database/service-tiers-sql-database-vcore?view=azuresql)
+- [Serverless compute tier](https://learn.microsoft.com/en-us/azure/azure-sql/database/serverless-tier-overview?view=azuresql)
 
 ---
 
@@ -66,6 +74,17 @@ GO
 ```
 
 **Exam principle:** chọn theo workload/topology; tránh “tăng MAXDOP = query luôn nhanh hơn”.
+
+Trên **Azure SQL Database** và **SQL database in Fabric**, database mới mặc định `MAXDOP = 8`; đây là default, không phải magic number bắt buộc cho mọi workload. Kiểm tra trước khi thay đổi và load-test với concurrency thực tế:
+
+```sql
+SELECT name, value, value_for_secondary
+FROM sys.database_scoped_configurations
+WHERE name = N'MAXDOP';
+GO
+```
+
+Nguồn: [Configure MAXDOP in Azure SQL Database and Fabric SQL database](https://learn.microsoft.com/en-us/azure/azure-sql/database/configure-max-degree-of-parallelism?view=azuresql)
 
 ### 2.2 Compatibility level
 
@@ -100,6 +119,8 @@ GO
 ```
 
 Điểm thi: automatic tuning có thể tự khắc phục plan regression, nhưng vẫn phải hiểu Query Store/telemetry.
+
+**Defaults/availability dễ nhầm:** Azure defaults cho server mới là `FORCE_LAST_GOOD_PLAN = ON`, còn `CREATE_INDEX` và `DROP_INDEX` là `OFF`. Azure SQL Managed Instance hiện chỉ hỗ trợ automatic tuning option **FORCE LAST GOOD PLAN**; đừng chọn auto-create/drop index cho MI. SQL database in Fabric lại tự bật `CREATE INDEX`.
 
 ### 2.4 Optimize for ad hoc workloads
 
@@ -139,8 +160,16 @@ Tham khảo: [Accelerated Database Recovery](https://learn.microsoft.com/en-us/s
 - transaction vẫn dùng `READ COMMITTED`.
 - mỗi statement đọc committed row version phù hợp.
 - giảm mạnh **reader–writer blocking**.
+- được bật mặc định cho database mới trong Azure SQL Database.
 
 ```sql
+SELECT name,
+       is_read_committed_snapshot_on,
+       snapshot_isolation_state_desc
+FROM sys.databases
+WHERE name = DB_NAME();
+GO
+
 ALTER DATABASE YourDatabase
 SET READ_COMMITTED_SNAPSHOT ON
 WITH ROLLBACK IMMEDIATE;
@@ -170,6 +199,10 @@ GO
 ### Bẫy rất quan trọng
 
 **RCSI không “xóa sạch mọi blocking”.** Nó chủ yếu giảm reader–writer blocking. Hai writer cùng sửa một row vẫn có thể block nhau; schema locks và các contention khác vẫn tồn tại.
+
+Với `SNAPSHOT`, transaction đọc snapshot nhất quán nhưng có thể gặp **update conflict** khi cố cập nhật row đã bị transaction khác thay đổi sau thời điểm snapshot bắt đầu. Đây không phải cơ chế “last writer wins”; ứng dụng phải rollback/retry transaction phù hợp.
+
+Nguồn: [Understand and resolve blocking in Azure SQL Database](https://learn.microsoft.com/en-us/azure/azure-sql/database/understand-resolve-blocking?view=azuresql)
 
 ### 3.2 Optimized locking — Azure SQL
 
@@ -567,3 +600,6 @@ Workload intermittent, có thời gian dài idle và muốn giảm compute cost 
 6. [Automatic tuning](https://learn.microsoft.com/en-us/azure/azure-sql/database/automatic-tuning-overview?view=azuresql)
 7. [Optimized locking](https://learn.microsoft.com/en-us/azure/azure-sql/database/optimized-locking-overview?view=azuresql)
 8. [Deadlocks guide](https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-deadlocks-guide?view=sql-server-ver17)
+9. [vCore service tiers](https://learn.microsoft.com/en-us/azure/azure-sql/database/service-tiers-sql-database-vcore?view=azuresql)
+10. [Serverless compute tier](https://learn.microsoft.com/en-us/azure/azure-sql/database/serverless-tier-overview?view=azuresql)
+11. [Configure MAXDOP in Azure SQL Database/Fabric SQL](https://learn.microsoft.com/en-us/azure/azure-sql/database/configure-max-degree-of-parallelism?view=azuresql)

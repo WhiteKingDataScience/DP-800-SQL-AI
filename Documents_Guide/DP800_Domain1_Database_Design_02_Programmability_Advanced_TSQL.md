@@ -653,6 +653,8 @@ GO
 
 **Clue:** gom nhiều values từ nhiều rows thành array JSON ⇒ `JSON_ARRAYAGG`.
 
+> **Availability ngày 09/08/2026:** `JSON_ARRAYAGG`/`JSON_OBJECTAGG` đã GA trên Azure SQL Database, Azure SQL Managed Instance dùng update policy SQL Server 2025/Always-up-to-date, và Fabric Data Warehouse; vẫn là Preview trên SQL Server 2025. Đừng suy diễn cùng một trạng thái cho mọi platform. Xem [JSON data in SQL Server](https://learn.microsoft.com/en-us/sql/relational-databases/json/json-data-sql-server?view=sql-server-ver17#json-data-from-aggregates).
+
 ---
 
 ## 8.5 `JSON_CONTAINS` — kiểm tra containment
@@ -671,6 +673,13 @@ GO
 
 > Vì đây là Preview và syntax/capability có thể tiến hóa, luôn kiểm tra trang Microsoft Learn trước khi áp dụng production.
 
+Các giới hạn hiện hành dễ thành đáp án nhiễu:
+
+- dù signature ghi path là optional, bản Preview hiện tại **yêu cầu path**;
+- path trỏ tới array phải có wildcard, ví dụ `$.tags[*]`;
+- chưa dùng native `json` value hoặc kết quả object/array từ `JSON_QUERY` làm search value;
+- hàm trả `1`, `0` hoặc `NULL`; path không tồn tại có thể trả `NULL`, không phải luôn là `0`.
+
 Nguồn: [JSON_CONTAINS](https://learn.microsoft.com/en-us/sql/t-sql/functions/json-contains-transact-sql?view=sql-server-ver17)
 
 ---
@@ -680,7 +689,21 @@ Nguồn: [JSON_CONTAINS](https://learn.microsoft.com/en-us/sql/t-sql/functions/j
 Các `REGEXP_*` là nhóm rất dễ được hỏi vì blueprint gọi tên từng hàm.
 
 > [!NOTE]
-> `REGEXP_MATCHES` và `REGEXP_SPLIT_TO_TABLE` là **table-valued functions** và yêu cầu database compatibility level 170, trừ trường hợp cấu hình database-scoped tương ứng cho phép built-in TVFs ở compatibility level khác.
+> `REGEXP_MATCHES` và `REGEXP_SPLIT_TO_TABLE` là **table-valued functions** và yêu cầu database compatibility level 170, trừ khi bật chính xác database-scoped configuration `ALLOW_BUILTIN_TVF_IN_ALL_COMPAT_LEVELS`. Regex trên Azure SQL Managed Instance yêu cầu update policy SQL Server 2025 hoặc Always-up-to-date.
+
+```sql
+-- Lựa chọn A: đặt compatibility level 170 cho database.
+ALTER DATABASE CURRENT SET COMPATIBILITY_LEVEL = 170;
+GO
+
+-- Lựa chọn B: khi chưa thể nâng compatibility level,
+-- cho phép hai built-in regex TVFs chạy ở compatibility level khác.
+ALTER DATABASE SCOPED CONFIGURATION
+SET ALLOW_BUILTIN_TVF_IN_ALL_COMPAT_LEVELS = ON;
+GO
+```
+
+Giới hạn dùng chung cần nhớ: `string_expression` dạng `varchar(max)`/`nvarchar(max)` được xử lý tối đa **2 MB**; regex pattern tối đa **8.000 bytes**. Các flags hợp lệ là `c` (case-sensitive, mặc định), `i`, `s`, `m`; nếu flags mâu thuẫn thì flag xuất hiện sau cùng thắng.
 
 ## 9.1 Bảng nhớ nhanh
 
@@ -808,7 +831,9 @@ FROM REGEXP_MATCHES
 GO
 ```
 
-Không cần học thuộc mọi tên output column để làm scenario; cần nhớ **hàm này trả về table**, khác `REGEXP_SUBSTR` chỉ trả về một occurrence scalar.
+Không cần học thuộc mọi tên output column để làm scenario; cần nhớ **hàm này trả về table** (`match_id`, vị trí, `match_value`, captures dạng JSON), khác `REGEXP_SUBSTR` chỉ trả về một occurrence scalar.
+
+Nguồn: [REGEXP_MATCHES](https://learn.microsoft.com/en-us/sql/t-sql/functions/regexp-matches-transact-sql?view=sql-server-ver17)
 
 ---
 
@@ -834,14 +859,24 @@ Nguồn: [REGEXP_SPLIT_TO_TABLE](https://learn.microsoft.com/en-us/sql/t-sql/fun
 
 Nhóm này hỗ trợ matching tên/địa chỉ/text gần giống nhau.
 
+> [!IMPORTANT]
+> Các trang Microsoft Learn của `EDIT_DISTANCE`, `EDIT_DISTANCE_SIMILARITY` và `JARO_WINKLER_DISTANCE` vẫn được đánh dấu **Preview** ngày 09/08/2026. Chúng không nhận `varchar(max)`/`nvarchar(max)`. Hãy đọc đúng platform trong câu hỏi; trên Azure SQL Managed Instance cần update policy SQL Server 2025/Always-up-to-date.
+
 ## 10.1 `EDIT_DISTANCE`
 
 Số phép biến đổi để chuyển chuỗi A thành B. **Thấp hơn = giống hơn.**
 
 ```sql
 SELECT EDIT_DISTANCE('Colour', 'Color') AS Distance;
+
+-- Có thể đặt ngưỡng để tránh tính toàn bộ distance không cần thiết.
+-- Nếu distance thực vượt 2, kết quả chỉ được bảo đảm là >= 2,
+-- không nhất thiết là distance chính xác.
+SELECT EDIT_DISTANCE('Microsoft SQL', 'Microsft SQL', 2) AS BoundedDistance;
 GO
 ```
+
+**Bẫy implementation hiện hành:** tài liệu mô tả thuật toán Damerau-Levenshtein, nhưng bản Preview hiện **chưa hỗ trợ transposition**. Không dựa vào việc đổi chỗ hai ký tự để khẳng định kết quả bằng 1.
 
 ## 10.2 `EDIT_DISTANCE_SIMILARITY`
 
@@ -1274,6 +1309,7 @@ Bạn chỉ nên đánh dấu hoàn tất file này khi tự làm được mà k
 - [JSON functions](https://learn.microsoft.com/en-us/sql/t-sql/functions/json-functions-transact-sql?view=sql-server-ver17)
 - [JSON_CONTAINS](https://learn.microsoft.com/en-us/sql/t-sql/functions/json-contains-transact-sql?view=sql-server-ver17)
 - [Regular Expressions Functions](https://learn.microsoft.com/en-us/sql/t-sql/functions/regular-expressions-functions-transact-sql?view=sql-server-ver17)
+- [REGEXP_MATCHES](https://learn.microsoft.com/en-us/sql/t-sql/functions/regexp-matches-transact-sql?view=sql-server-ver17)
 - [REGEXP_SPLIT_TO_TABLE](https://learn.microsoft.com/en-us/sql/t-sql/functions/regexp-split-to-table-transact-sql?view=sql-server-ver17)
 - [EDIT_DISTANCE](https://learn.microsoft.com/en-us/sql/t-sql/functions/edit-distance-transact-sql?view=sql-server-ver17)
 - [EDIT_DISTANCE_SIMILARITY](https://learn.microsoft.com/en-us/sql/t-sql/functions/edit-distance-similarity-transact-sql?view=sql-server-ver17)

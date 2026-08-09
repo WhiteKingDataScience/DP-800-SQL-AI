@@ -599,6 +599,7 @@ GO
 # PHẦN 4 — JSON COLUMNS VÀ INDEXES
 
 Nguồn:
+- [JSON data in SQL Server](https://learn.microsoft.com/en-us/sql/relational-databases/json/json-data-sql-server?view=sql-server-ver17)
 - [Index JSON data](https://learn.microsoft.com/en-us/sql/relational-databases/json/index-json-data?view=sql-server-ver17)
 - [CREATE JSON INDEX](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-json-index-transact-sql?view=sql-server-ver17)
 
@@ -626,6 +627,16 @@ CREATE TABLE dbo.Products
 );
 ```
 
+### Availability phải đọc trước khi chọn đáp án
+
+| Khả năng | Azure SQL Database | Azure SQL Managed Instance | SQL Server 2025 | SQL database in Fabric |
+|---|---|---|---|---|
+| Native `json` data type | GA | GA nếu dùng update policy SQL Server 2025/Always-up-to-date | Preview | Preview |
+| Lưu JSON trong `nvarchar(max)` + `ISJSON` | Hỗ trợ | Hỗ trợ | Hỗ trợ | Hỗ trợ theo tài liệu nền tảng |
+| `CREATE JSON INDEX` | Không suy diễn từ việc có native `json` | Không suy diễn từ việc có native `json` | **Preview, chỉ SQL Server 2025** | Không |
+
+> **Bẫy thi:** native `json` đã GA trên một số Azure SQL products không có nghĩa `CREATE JSON INDEX` cũng GA ở đó. Theo tài liệu cú pháp hiện hành ngày 09/08/2026, `CREATE JSON INDEX` chỉ áp dụng cho SQL Server 2025 và vẫn ở Preview. Nếu platform không hỗ trợ, dùng computed column dựa trên `JSON_VALUE` rồi tạo B-tree index như mục 4.2.
+
 ---
 
 ## 4.2 Computed column + B-tree index
@@ -652,7 +663,7 @@ GO
 
 ## 4.3 Native `CREATE JSON INDEX`
 
-SQL Server 2025: Preview.
+SQL Server 2025: Preview. Không dùng đoạn này cho Azure SQL chỉ vì Azure SQL đã có native `json` type.
 
 ```sql
 CREATE TABLE dbo.SalesOrder
@@ -685,6 +696,7 @@ WHERE JSON_VALUE(Info, '$.Customer.ID' RETURNING INT) = 16167;
 Nhớ:
 - Table cần clustered PK cho native JSON index.
 - Không dùng native JSON index trên indexed view.
+- `ONLINE = ON` chưa được hỗ trợ cho JSON index; thao tác offline có thể giữ `Sch-M` lock.
 - File cũ nói “không có JSON index trực tiếp” là lỗi thời.
 
 ---
@@ -876,17 +888,44 @@ Một partition function có thể được nhiều objects dùng.
 
 ## 7.4 SWITCH
 
+Ví dụ hoàn chỉnh dưới đây đưa partition 2 (`2026-01-01` đến trước `2026-04-01` vì dùng `RANGE RIGHT`) sang một staging/archive table rỗng. Target nằm cùng filegroup và có schema, clustered/nonclustered indexes tương ứng:
+
 ```sql
+CREATE TABLE dbo.OrderArchive
+(
+    OrderId BIGINT NOT NULL,
+    OrderDate DATE NOT NULL,
+    CustomerId INT NOT NULL,
+    Amount DECIMAL(19,2) NOT NULL,
+    CONSTRAINT PK_OrderArchive
+        PRIMARY KEY CLUSTERED (OrderDate, OrderId),
+    CONSTRAINT CK_OrderArchive_2026Q1
+        CHECK
+        (
+            OrderDate >= CONVERT(date, '20260101', 112)
+            AND OrderDate < CONVERT(date, '20260401', 112)
+        )
+) ON [PRIMARY];
+GO
+
+CREATE INDEX IX_OrderArchive_Customer
+ON dbo.OrderArchive(CustomerId, OrderDate)
+ON [PRIMARY];
+GO
+
 ALTER TABLE dbo.PartitionedOrders
 SWITCH PARTITION 2
 TO dbo.OrderArchive;
+GO
 ```
 
 Điều kiện:
-- source/target compatible,
-- schema/index phù hợp,
-- range/check constraints phù hợp,
+- target phải rỗng,
+- source/target có columns, data types, nullability và indexes tương thích,
+- target/range có `CHECK` constraint phù hợp và nằm trên filegroup tương ứng,
 - operation rất nhanh khi chỉ metadata nhưng vẫn có locking.
+
+> **Bẫy:** `SWITCH` không tự copy từng row; đây chủ yếu là metadata operation. Nếu target có row, index không tương thích hoặc constraint không chứng minh được đúng boundary, lệnh thất bại.
 
 ---
 

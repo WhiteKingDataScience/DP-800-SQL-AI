@@ -21,6 +21,18 @@ Theo DP-800 Study Guide hiện hành, phần **Design and implement models and e
 
 > **Tư duy thi:** Microsoft thường không chỉ hỏi “cú pháp là gì?”, mà hỏi “với workload này, giải pháp nào phù hợp nhất và vì sao?”. Vì vậy tài liệu này luôn đi theo thứ tự **khái niệm → quyết định → cú pháp → lab → bẫy thi**.
 
+### Ma trận nền tảng và trạng thái tính năng (chốt ngày 09/08/2026)
+
+| Khả năng | SQL Server 2025 (17.x) | Azure SQL Database | Azure SQL Managed Instance | SQL database in Fabric |
+|---|---|---|---|---|
+| `VECTOR` (`float32`) và vector scalar functions | Có | Có | Có theo servicing policy | Có |
+| `VECTOR(..., float16)` | **Preview**, cần `PREVIEW_FEATURES` | Kiểm tra `Applies to`/rollout hiện hành | Kiểm tra servicing policy | Kiểm tra docs hiện hành |
+| `CREATE EXTERNAL MODEL`, `AI_GENERATE_EMBEDDINGS` | Có | Có | Có với **Always-up-to-date update policy** | Có |
+| `AI_GENERATE_CHUNKS` | Có; compatibility level ≥ 170 | Có; compatibility level ≥ 170 | Có theo servicing policy; compatibility level ≥ 170 | Có; compatibility level ≥ 170 |
+| Local `ONNX Runtime` | **Developer Preview**, chỉ Windows; cần Machine Learning Services, `PREVIEW_FEATURES` và external AI runtime | Không áp dụng | Không áp dụng | Không áp dụng |
+
+“Có” trong bảng nghĩa là trang Microsoft Learn hiện hành liệt kê ở mục **Applies to** và không gắn nhãn Preview cho toàn bộ câu lệnh; từng tùy chọn con vẫn có thể là Preview. Luôn kiểm tra lại trang [CREATE EXTERNAL MODEL](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-external-model-transact-sql?view=sql-server-ver17), [AI_GENERATE_EMBEDDINGS](https://learn.microsoft.com/en-us/sql/t-sql/functions/ai-generate-embeddings-transact-sql?view=sql-server-ver17) và [Vector data type](https://learn.microsoft.com/en-us/sql/t-sql/data-types/vector-data-type?view=sql-server-ver17) khi triển khai thật.
+
 ---
 
 # 📘 PHẦN 1 — NỀN TẢNG MODELS, EMBEDDINGS VÀ VECTOR
@@ -127,14 +139,64 @@ Trong phạm vi `CREATE EXTERNAL MODEL` hiện hành, model object được dùn
 
 > **Exam pattern:** “Cần semantic search đa ngôn ngữ, dữ liệu thay đổi thường xuyên, cần latency thấp” → bạn phải cân bằng **quality + vector size + inference latency + maintenance cost**, không phải cứ chọn model lớn nhất.
 
+### Chọn embedding model: ví dụ Microsoft Foundry/Azure OpenAI
+
+Các con số dưới đây là thông số Microsoft công bố cho những model phổ biến, không phải lời khẳng định rằng một model luôn tốt nhất:
+
+| Model | Default dimensions | Max input | Khi nên cân nhắc | Lưu trực tiếp vào SQL `VECTOR` |
+|---|---:|---:|---|---|
+| `text-embedding-3-small` | 1,536 | 8,192 tokens | Cân bằng chất lượng, latency, chi phí và storage; điểm bắt đầu hợp lý | `VECTOR(1536)` |
+| `text-embedding-3-large` | 3,072 | 8,192 tokens | Cần chất lượng/multilingual tốt hơn và đã benchmark | **Không** dùng `VECTOR(3072)`; yêu cầu model trả `dimensions <= 1998` nếu deployment hỗ trợ |
+| `text-embedding-ada-002` v2 | 1,536 | 8,192 tokens | Hệ thống cũ/compatibility; đánh giá migration thay vì chọn mặc định cho dự án mới | `VECTOR(1536)` |
+
+`text-embedding-3-*` hỗ trợ rút gọn output qua tham số `dimensions`. Không tự ý đổi dimension/model cho một phần dữ liệu: vectors từ hai model hoặc hai cấu hình dimension **không cùng một vector space** để so sánh đáng tin cậy. Khi migrate model, hãy tạo version mới, re-embed corpus và query bằng cùng version, đo recall/latency rồi mới cut over. Xem [model catalog do Azure bán trực tiếp](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure) và [Embeddings REST API](https://learn.microsoft.com/en-us/rest/api/aifoundry/azureopenai/embeddings).
+
+### Multimodal, multilingual, model size và structured output: hiểu đúng phạm vi
+
+- **Multimodal:** nếu nguồn có ảnh/audio, cần model/processing pipeline chuyển nội dung đó thành representation phù hợp; `CREATE EXTERNAL MODEL ... MODEL_TYPE = EMBEDDINGS` hiện không biến mọi model sinh văn bản thành multimodal SQL function.
+- **Multilingual:** benchmark bằng chính tiếng Việt, tiếng Anh và các cặp cross-language của doanh nghiệp; tên “multilingual” không thay thế evaluation dataset.
+- **Model size:** model lớn hơn có thể tăng chất lượng nhưng thường tăng latency/cost; phải đo trên ground-truth queries.
+- **Structured output:** rất quan trọng khi đánh giá generation model cho RAG/tool workflow. Tuy nhiên external model object của cú pháp SQL hiện hành chỉ nhận `MODEL_TYPE = EMBEDDINGS`; structured JSON của LLM được xử lý ở REST/RAG workflow trong file 10.
+
 ### Remote endpoint vs local ONNX runtime
 
-Current `CREATE EXTERNAL MODEL` documentation còn hỗ trợ các API formats như Azure OpenAI/OpenAI/Ollama và **ONNX Runtime** (local runtime trên SQL Server trong điều kiện hỗ trợ). Đây là kiến thức mở rộng hữu ích cho câu hỏi “model chạy ở đâu / security boundary / latency”.
+Current `CREATE EXTERNAL MODEL` documentation còn hỗ trợ các API formats như Azure OpenAI/OpenAI/Ollama và **ONNX Runtime**. ONNX local là **Developer Preview**, chỉ áp dụng SQL Server 2025 trên Windows; cần SQL Server Machine Learning Services, database `PREVIEW_FEATURES = ON`, server option `external AI runtimes enabled = 1`, runtime/model/tokenizer files và quyền filesystem phù hợp.
 
 - Remote model: dễ dùng managed cloud model nhưng có network/auth/data-egress considerations.
 - Local ONNX: inference gần SQL Server hơn nhưng phải quản lý runtime/model files và security của third-party model.
 
 Trong DP-800, hãy ưu tiên nắm chắc external embedding model + Managed Identity; ONNX là related/current feature để nhận diện scenario.
+
+```sql
+-- Chỉ dành cho lab ONNX Developer Preview trên SQL Server 2025/Windows.
+ALTER DATABASE SCOPED CONFIGURATION SET PREVIEW_FEATURES = ON;
+GO
+EXECUTE sys.sp_configure 'external AI runtimes enabled', 1;
+RECONFIGURE WITH OVERRIDE;
+GO
+
+-- Sau khi Machine Learning Services, DLL runtime, tokenizer, model files
+-- và filesystem permissions đã được cấu hình theo hướng dẫn Microsoft:
+CREATE EXTERNAL MODEL DP800_LocalOnnxModel
+WITH
+(
+    LOCATION = 'C:\onnx_runtime\model\all-MiniLM-L6-v2-onnx',
+    API_FORMAT = 'ONNX Runtime',
+    MODEL_TYPE = EMBEDDINGS,
+    MODEL = 'allMiniLM',
+    PARAMETERS = '{"valid":"JSON"}',
+    LOCAL_RUNTIME_PATH = 'C:\onnx_runtime\'
+);
+GO
+
+SELECT AI_GENERATE_EMBEDDINGS
+(
+    N'Kiểm thử embedding local' USE MODEL DP800_LocalOnnxModel
+) AS LocalEmbedding;
+GO
+```
+
+> **Security:** Chỉ nạp ONNX model/runtime từ nguồn đã xác minh. Third-party model/DLL có thể đọc hoặc làm rò dữ liệu; giới hạn quyền, kiểm tra checksum/signature, audit và cô lập host theo chính sách. Xem phần [ONNX Runtime local example và security considerations](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-external-model-transact-sql?view=sql-server-ver17#example-with-onnx-runtime-running-locally).
 
 ---
 
@@ -186,7 +248,16 @@ GO
 
 Sau đó external model tham chiếu credential này.
 
-> **Lưu ý quan trọng:** Role RBAC cụ thể cần cấp cho Managed Identity phụ thuộc loại resource, endpoint và tính năng đang gọi. Hãy dùng **least privilege** và kiểm tra tài liệu hiện hành của endpoint. Trong câu hỏi thi, nếu yêu cầu “không secrets/password/API key”, lựa chọn passwordless bằng **Managed Identity** thường là điểm mấu chốt.
+Riêng **SQL Server 2025**, Managed Identity ở đây là identity của SQL Server host đã được Azure Arc/VM cấu hình. Phải cho phép server-scoped database credentials trước khi tạo/dùng credential:
+
+```sql
+-- SQL Server 2025; cần ALTER SETTINGS ở server level.
+EXECUTE sys.sp_configure 'allow server scoped db credentials', 1;
+RECONFIGURE WITH OVERRIDE;
+GO
+```
+
+> **Lưu ý quan trọng:** Role RBAC cụ thể phụ thuộc resource và thao tác. Ví dụ `CREATE EXTERNAL MODEL` với Azure OpenAI trên SQL Server 2025 hiện yêu cầu identity được cấp **Cognitive Services OpenAI Contributor** theo ví dụ chính thức; direct chat/completions thường dùng role inference hẹp hơn như **Cognitive Services OpenAI User** nếu đủ. Luôn dùng **least privilege** và xác nhận trong [Azure OpenAI RBAC](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/role-based-access-control). Trong câu hỏi thi, “không secrets/password/API key” thường trỏ tới **Managed Identity**.
 
 ### 5.2. External REST endpoint setting
 
@@ -281,6 +352,8 @@ GO
 `retry_count` là để xử lý lỗi transient phù hợp; không thay thế việc sửa sai credential/RBAC/URL.
 
 ### Thay đổi model definition
+
+Theo trang `Applies to` chốt ngày rà soát, `ALTER EXTERNAL MODEL` và `DROP EXTERNAL MODEL` liệt kê SQL Server 2025, Azure SQL Database và SQL database in Fabric; không nên tự suy rộng sang Managed Instance nếu trang version/platform bạn dùng chưa liệt kê.
 
 ```sql
 ALTER EXTERNAL MODEL DP800_EmbeddingModel
@@ -548,7 +621,7 @@ CREATE TABLE dbo.DocumentChunks
 (
     ChunkId        bigint IDENTITY(1,1) CONSTRAINT PK_DocumentChunks PRIMARY KEY,
     DocumentId     int NOT NULL,
-    ChunkOrder     int NOT NULL,
+    ChunkOrder     bigint NOT NULL, -- khớp output chunk_order của function
     ChunkText      nvarchar(max) NOT NULL,
     Embedding      vector(1536) NULL,
     EmbeddingModel sysname NOT NULL CONSTRAINT DF_DocumentChunks_Model DEFAULT N'DP800_EmbeddingModel',
@@ -619,7 +692,7 @@ Bạn cần quyết định giữa **synchronous** và **asynchronous maintenanc
 | **CDC** | Cần lịch sử change chi tiết, downstream ETL/event process | Giàu dữ liệu change | Phức tạp/overhead hơn CT |
 | **Azure Functions SQL trigger binding** | Serverless/event-driven re-embedding | Tách workload khỏi transaction | Cần Functions runtime |
 | **Azure Logic Apps** | Low-code orchestration | Dễ tích hợp workflow | Không phải lựa chọn tối ưu cho ultra-high-throughput |
-| **CES** | Near-real-time stream DML changes đến event system | Phù hợp event-driven architecture | Availability/Preview phụ thuộc nền tảng |
+| **CES** | Near-real-time stream DML changes đến Azure Event Hubs | CloudEvents JSON/Avro, phù hợp event-driven architecture | **Preview**; SQL Server 2025 cần `PREVIEW_FEATURES`; Azure SQL DB/MI không cần bật preview config nhưng vẫn là Preview feature |
 | **Microsoft Foundry workflow** | AI orchestration/model lifecycle | Tích hợp hệ sinh thái AI | Cần quản lý service bên ngoài SQL |
 
 ### Quy tắc chọn nhanh
@@ -663,6 +736,8 @@ GO
 
 Worker/SQL job/Azure Function có thể đọc các dòng `EmbeddingNeedsRefresh = 1`, rebuild chunks/embeddings rồi reset về 0.
 
+Trong production nên lưu thêm `ContentHash`, tên/version model, dimensions và `EmbeddedAt`. Worker chỉ reset dirty flag sau khi embedding mới đã ghi thành công; dùng idempotency/retry để một change được xử lý lặp lại vẫn không làm hỏng dữ liệu. Khi đổi model hoặc dimension, tạo version/cột mới và re-embed toàn bộ corpus trước khi chuyển query traffic.
+
 > **Exam trap:** Trigger **có thể** là maintenance method, nhưng gọi remote AI synchronous cho hàng nghìn updates/giờ thường là lựa chọn xấu vì kéo dài transaction và tăng blocking/latency.
 
 ---
@@ -680,7 +755,19 @@ Worker/SQL job/Azure Function có thể đọc các dòng `EmbeddingNeedsRefresh
 7. Output dimensions có khớp `VECTOR(n)` không?
 8. Endpoint có throttling/rate limit không?
 
-`AI_GENERATE_EMBEDDINGS` có Extended Events phục vụ troubleshooting, trong đó có event liên quan embedding generation và external REST request/response.
+`AI_GENERATE_EMBEDDINGS` có Extended Events phục vụ troubleshooting. Hai event cần nhớ cho remote model là `ai_generate_embeddings_summary` và `external_rest_endpoint_summary`; ONNX local có thêm `ai_generate_embeddings_airuntime_trace`. Không log raw prompt/content/credential nếu chúng chứa PII hoặc secrets.
+
+### Chẩn đoán theo triệu chứng
+
+| Triệu chứng | Nguyên nhân thường gặp | Hướng kiểm tra |
+|---|---|---|
+| 401/403 | Credential sai, Managed Identity chưa có RBAC, principal thiếu quyền model | Credential URL/identity, Azure role, `EXECUTE ON EXTERNAL MODEL` |
+| 404 | Sai resource/deployment/path/API version | Copy endpoint đang được resource hỗ trợ; không học thuộc API version cũ |
+| 429 | Quota/rate limit | Batch, backoff/retry, giảm concurrency, kiểm tra quota |
+| Output không cast được vào `VECTOR(n)` | Model trả dimension khác cột/biến | Kiểm tra `PARAMETERS dimensions`, model deployment và `VECTORPROPERTY` |
+| Input bị từ chối/quá dài | Chunk vượt input limit hoặc content filter | Giảm/điều chỉnh chunk, kiểm tra token limit và policy |
+| Search trả “nghĩa cũ” | Source đổi nhưng embedding chưa refresh | Dirty flag/CT/CDC/CES queue, model version, `EmbeddedAt`/content hash |
+| ONNX local không load | Thiếu runtime/tokenizer/DLL, filesystem permission hoặc feature flags | Machine Learning Services, `PREVIEW_FEATURES`, `external AI runtimes enabled`, XEvent airuntime trace |
 
 ---
 
@@ -708,6 +795,12 @@ Sai. Đây là stale embedding; cần maintenance strategy.
 
 ### Bẫy 7 — Gọi AI synchronous trong trigger của high-write OLTP
 Thường là đáp án kém nhất vì network call kéo dài transaction.
+
+### Bẫy 8 — Trộn embedding model/version trong cùng search space
+Sai. Corpus và query phải được embed bằng cùng model/version/dimension; đổi model thường đòi hỏi re-embed và cutover có kiểm soát.
+
+### Bẫy 9 — `CREATE EXTERNAL MODEL` đăng ký generation model cho structured output
+Sai trong cú pháp SQL hiện hành: `MODEL_TYPE` đang nhận `EMBEDDINGS`. Structured output của generation model thuộc REST/RAG workflow, không phải native external-model type khác.
 
 ---
 
@@ -781,15 +874,18 @@ Bạn chỉ nên coi phần này là đã vững khi có thể trả lời **kh�
 - [ ] `VECTOR(n)` lưu gì và maximum dimensions hiện tại là bao nhiêu?
 - [ ] Khi nào dùng `float32`, khi nào có thể cân nhắc `float16`?
 - [ ] 6 tiêu chí chính để evaluate external model?
+- [ ] Chọn được `text-embedding-3-small`/`3-large` theo quality, dimensions, latency, cost và biết không tạo `VECTOR(3072)`.
 - [ ] Viết được `CREATE EXTERNAL MODEL` với `API_FORMAT`, `MODEL_TYPE`, `MODEL`, `CREDENTIAL`.
 - [ ] Viết được `ALTER EXTERNAL MODEL`, `DROP EXTERNAL MODEL` và query `sys.external_models`.
 - [ ] Giải thích Managed Identity/passwordless.
+- [ ] Nhớ SQL Server 2025 cần Arc/host identity và `allow server scoped db credentials` khi dùng Managed Identity.
 - [ ] Biết cột nào nên và không nên embed.
 - [ ] Viết được `AI_GENERATE_CHUNKS` + `CROSS APPLY`.
 - [ ] Nhớ `CHUNK_TYPE = FIXED`, `CHUNK_SIZE` characters, `OVERLAP` percentage.
 - [ ] Viết được `AI_GENERATE_EMBEDDINGS(... USE MODEL ...)`.
 - [ ] Thiết kế được Documents → Chunks → Embeddings.
 - [ ] Chọn maintenance method giữa trigger / CT / CDC / Function / Logic Apps / CES / Foundry.
+- [ ] Nhớ CES hiện là Preview và biết version/hash/timestamp để phát hiện stale embedding.
 - [ ] Nhận ra stale embedding và tránh remote inference trong high-write transaction.
 
 ---
@@ -807,6 +903,11 @@ Bạn chỉ nên coi phần này là đã vững khi có thể trả lời **kh�
 7. [Vector data type](https://learn.microsoft.com/en-us/sql/t-sql/data-types/vector-data-type?view=sql-server-ver17)
 8. [Vector search and vector indexes in the SQL Database Engine](https://learn.microsoft.com/en-us/sql/sql-server/ai/vectors?view=sql-server-ver17)
 9. [Microsoft Learn — Implement AI capabilities in database solutions](https://learn.microsoft.com/en-us/training/paths/implement-ai-capabilities-database-solutions/)
+10. [Microsoft Foundry models sold directly by Azure — embedding model dimensions/input limits](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure)
+11. [Azure OpenAI embeddings REST API](https://learn.microsoft.com/en-us/rest/api/aifoundry/azureopenai/embeddings)
+12. [Change Event Streaming overview](https://learn.microsoft.com/en-us/sql/relational-databases/track-changes/change-event-streaming/overview?view=sql-server-ver17)
+13. [Azure OpenAI role-based access control](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/role-based-access-control)
+14. [Microsoft Learn module — Design and implement models and embeddings with SQL](https://learn.microsoft.com/en-us/training/modules/design-implement-models-embeddings-with-sql/)
 
 ---
 

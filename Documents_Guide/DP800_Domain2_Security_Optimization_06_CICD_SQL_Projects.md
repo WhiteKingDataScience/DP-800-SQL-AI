@@ -401,6 +401,8 @@ sqlpackage \
 
 Không cần client secret nếu OIDC federation đã được cấu hình.
 
+Federated credential phải giới hạn đúng **repository + branch/tag/environment subject**; OIDC không tự an toàn nếu trust expression quá rộng. `client-id`, `tenant-id`, `subscription-id` là identifiers, không phải passwords; có thể lưu trong repository/environment variables. Secret thực, nếu còn bắt buộc, phải nằm trong GitHub environment secret/Key Vault và không được in ra log.
+
 Tham khảo: [GitHub Actions OIDC with Azure](https://learn.microsoft.com/en-us/azure/developer/github/connect-from-azure-openid-connect)
 
 ---
@@ -418,13 +420,11 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: read
-  id-token: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
@@ -442,12 +442,19 @@ jobs:
         with:
           name: database-dacpac
           path: ./artifact/*.dacpac
+          if-no-files-found: error
 
   deploy:
     if: github.event_name == 'push'
     needs: build
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: sql-production
+      cancel-in-progress: false
 
     steps:
       - name: Download dacpac
@@ -459,9 +466,9 @@ jobs:
       - name: Azure login by OIDC
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Install SqlPackage
         run: dotnet tool install --global microsoft.sqlpackage
@@ -472,9 +479,16 @@ jobs:
           TARGET_CS="Server=tcp:${{ vars.AZURE_SQL_SERVER }},1433;Initial Catalog=${{ vars.AZURE_SQL_DATABASE }};Authentication=Active Directory Default;Encrypt=True;TrustServerCertificate=False"
           sqlpackage \
             /Action:DeployReport \
-            /SourceFile:"$(find ./artifact -name '*.dacpac' | head -1)" \
+            /SourceFile:"./artifact/DP800_DatabaseProject.dacpac" \
             /TargetConnectionString:"$TARGET_CS" \
             /OutputPath:"deploy-report.xml"
+
+      - name: Preserve deployment report
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-deploy-report
+          path: deploy-report.xml
+          if-no-files-found: error
 
       # Production publish nên đi sau environment approval/protection rule.
       - name: Publish
@@ -483,11 +497,14 @@ jobs:
           TARGET_CS="Server=tcp:${{ vars.AZURE_SQL_SERVER }},1433;Initial Catalog=${{ vars.AZURE_SQL_DATABASE }};Authentication=Active Directory Default;Encrypt=True;TrustServerCertificate=False"
           sqlpackage \
             /Action:Publish \
-            /SourceFile:"$(find ./artifact -name '*.dacpac' | head -1)" \
-            /TargetConnectionString:"$TARGET_CS"
+            /SourceFile:"./artifact/DP800_DatabaseProject.dacpac" \
+            /TargetConnectionString:"$TARGET_CS" \
+            /p:BlockOnPossibleDataLoss=True
 ```
 
-> Workflow này minh họa hướng **passwordless**: `azure/login` dùng OIDC và SqlPackage dùng Entra authentication. Deployment principal/service principal phải được tạo trong target database và chỉ được cấp quyền deployment cần thiết. Nếu môi trường/tooling cụ thể không hỗ trợ luồng này, dùng environment secret/Key Vault thay vì hardcode credential.
+> Workflow này minh họa hướng **passwordless**: `azure/login` dùng OIDC và SqlPackage dùng Entra authentication. `id-token: write` chỉ cấp cho deploy job, không cấp thừa cho pull-request build. `concurrency` tránh hai schema deployments vào production chạy chồng nhau. Deployment principal/service principal phải được tạo trong target database và chỉ được cấp quyền deployment cần thiết. Nếu môi trường/tooling cụ thể không hỗ trợ luồng này, dùng environment secret/Key Vault thay vì hardcode credential.
+
+> **Approval nuance:** GitHub environment approval diễn ra trước khi toàn bộ deploy job chạy. Nếu policy bắt buộc con người xem `DeployReport` rồi mới cho `Publish`, hãy tách preview và publish thành **hai jobs/environments**; publish job `needs` preview và có required reviewers. Chỉ đặt hai steps liên tiếp trong cùng một job không tạo ra approval gate ở giữa.
 
 Microsoft Learn cũng nêu `azure/sql-action` cho GitHub Actions và `SqlAzureDacpacDeployment` cho Azure DevOps.
 

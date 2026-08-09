@@ -248,7 +248,7 @@ SELECT * FROM dbo.Customers; -- thấy giá trị thật
 REVERT;
 GO
 
-REVOKE UNMASK TO SupportUser;
+REVOKE UNMASK FROM SupportUser;
 GO
 ```
 
@@ -486,23 +486,63 @@ DP-800 có thể cho scenario Azure SQL gọi Azure OpenAI/REST endpoint qua `sp
 3. Database scoped credential đại diện cho authentication.
 4. Chỉ principal cần thiết mới có quyền gọi external endpoint.
 
-### 9.2 Credential dùng Managed Identity
+### 9.2 Availability và bước enable theo platform
+
+| Platform | Availability/enablement ngày 09/08/2026 |
+|---|---|
+| Azure SQL Database | Có và enabled mặc định |
+| SQL database in Fabric | Có và enabled mặc định |
+| Azure SQL Managed Instance | Cần update policy SQL Server 2025/Always-up-to-date; disabled mặc định |
+| SQL Server 2025 | Có; disabled mặc định |
+
+Trên **SQL Server 2025** và **Azure SQL Managed Instance**, principal có `ALTER SETTINGS` (hoặc role phù hợp như `sysadmin`/`serveradmin`) bật tính năng một lần ở server/instance:
+
+```sql
+EXECUTE sys.sp_configure 'external rest endpoint enabled', 1;
+RECONFIGURE WITH OVERRIDE;
+GO
+
+-- Riêng SQL Server 2025: cần thêm option này nếu credential
+-- dùng Managed Identity.
+EXECUTE sys.sp_configure 'allow server scoped db credentials', 1;
+RECONFIGURE WITH OVERRIDE;
+GO
+```
+
+> **Bẫy:** không chạy hai `sp_configure` này trên Azure SQL Database/Fabric chỉ vì thấy chúng trong ví dụ SQL Server. Luôn đọc platform trong scenario.
+
+### 9.3 Credential dùng Managed Identity và quyền tối thiểu
 
 ```sql
 CREATE DATABASE SCOPED CREDENTIAL
     [https://my-openai-resource.openai.azure.com]
 WITH
     IDENTITY = 'Managed Identity',
-    SECRET = '{"resourceid":"https://cognitiveservices.azure.com/"}';
+    SECRET = '{"resourceid":"https://cognitiveservices.azure.com"}';
+GO
+
+-- Principal ứng dụng minh họa. Trong Azure, thường là Entra user/Managed Identity.
+CREATE USER RestEndpointCaller WITHOUT LOGIN;
+GO
+
+-- Quyền gọi external endpoint và quyền dùng credential là HAI quyền khác nhau.
+GRANT EXECUTE ANY EXTERNAL ENDPOINT TO RestEndpointCaller;
+GRANT REFERENCES ON DATABASE SCOPED CREDENTIAL::
+    [https://my-openai-resource.openai.azure.com]
+TO RestEndpointCaller;
 GO
 ```
+
+Ngoài database, Managed Identity của SQL resource phải được cấp đúng data-plane role trên resource đích (ví dụ role Azure OpenAI phù hợp). Credential name phải là URL không có query string, và protocol/FQDN/path phải khớp hoặc là prefix hợp lệ của request URL.
 
 Ví dụ gọi endpoint:
 
 ```sql
 DECLARE @response nvarchar(max);
 
-EXEC sys.sp_invoke_external_rest_endpoint
+DECLARE @http_status int;
+
+EXEC @http_status = sys.sp_invoke_external_rest_endpoint
     @url = N'https://my-openai-resource.openai.azure.com/openai/deployments/my-model/chat/completions?api-version=<supported-api-version>',
     @method = N'POST',
     @credential = N'https://my-openai-resource.openai.azure.com',
@@ -514,13 +554,13 @@ EXEC sys.sp_invoke_external_rest_endpoint
     }',
     @response = @response OUTPUT;
 
-SELECT @response;
+SELECT @http_status AS HttpStatus, @response AS ResponseBody;
 GO
 ```
 
 > API version/model name phải dùng giá trị đang được resource của bạn hỗ trợ. Không hardcode API key nếu scenario yêu cầu passwordless.
 
-Với SQL Server 2025/Azure SQL Managed Instance, hãy kiểm tra requirement bật external REST endpoint và quyền cần thiết trên phiên bản đang dùng.
+Chỉ **HTTPS/TLS** được hỗ trợ; procedure không tự follow HTTP redirect. Return code là `0` khi nhận HTTP 2xx, là HTTP status code nếu response không phải 2xx, còn lỗi không thể thực hiện call sẽ ném exception. Đây là lý do nên kiểm tra cả return code lẫn `@response`.
 
 Tham khảo: [sp_invoke_external_rest_endpoint](https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sp-invoke-external-rest-endpoint-transact-sql?view=sql-server-ver17)
 
@@ -557,6 +597,7 @@ Tham khảo:
 - [DAB authentication](https://learn.microsoft.com/en-us/azure/data-api-builder/concept/security/authentication)
 - [DAB authorization](https://learn.microsoft.com/en-us/azure/data-api-builder/concept/security/authorization)
 - [DAB 2.0 — OBO và MCP](https://learn.microsoft.com/en-us/azure/data-api-builder/whats-new/version-2-0)
+- [Configure DAB On-Behalf-Of](https://learn.microsoft.com/en-us/azure/data-api-builder/concept/security/authenticate-on-behalf-of)
 
 ---
 

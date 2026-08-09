@@ -23,7 +23,18 @@ Bạn cần làm được toàn bộ các việc sau:
 9. Implement **Reciprocal Rank Fusion (RRF)**.
 10. Đánh giá performance của vector/hybrid search.
 
-> **Điểm sửa lớn so với tài liệu cũ:** SQL Database Engine hiện dùng **DiskANN** cho `CREATE VECTOR INDEX`; không nên học HNSW như vector-index type của T-SQL này. `VECTOR_SEARCH` cũng đã có syntax mới với `SELECT TOP (N) WITH APPROXIMATE`; `TOP_N` trong function là syntax cũ/deprecated cho index thế hệ trước.
+> **Điểm sửa lớn so với tài liệu cũ:** SQL Database Engine hiện dùng **DiskANN** cho `CREATE VECTOR INDEX`; không nên học HNSW như vector-index type của T-SQL này. Với **vector index v3**, `VECTOR_SEARCH` dùng `SELECT TOP (N) WITH APPROXIMATE`; `TOP_N` là syntax cũ/deprecated nhưng vẫn cần cho earlier index. Đừng bỏ qua platform/version: tại ngày rà soát, v3 mới chỉ có trên Azure SQL Database và SQL database in Fabric.
+
+### Ma trận nền tảng/version bắt buộc phải nhớ (09/08/2026)
+
+| Khả năng | SQL Server 2025 | Azure SQL Database | Azure SQL Managed Instance | SQL database in Fabric |
+|---|---|---|---|---|
+| `VECTOR`, `VECTOR_DISTANCE`, `VECTOR_NORM`, `VECTOR_NORMALIZE`, `VECTORPROPERTY` | Có | Có | Có theo servicing policy | Có |
+| `CREATE VECTOR INDEX` / `VECTOR_SEARCH` | **Preview**; cần `PREVIEW_FEATURES` | **Preview**, rollout theo region | **Không được liệt kê** trong `Applies to` hiện hành | **Preview**, rollout theo region |
+| Latest vector index **v3**: full DML, iterative filtering, optimizer-driven ANN/kNN, quantization | Chưa có theo ghi chú hiện hành | Có khi rollout đến region | Không áp dụng | Có khi rollout đến region |
+| Earlier vector index: legacy `TOP_N`, post-filter, DML limitations | Có trong Preview hiện hành | Có thể còn tồn tại nếu index cũ chưa migrate | Không áp dụng | Có thể còn tồn tại nếu index cũ chưa migrate |
+
+Do đó, trên Managed Instance hãy dùng exact search bằng `VECTOR_DISTANCE` trong phạm vi docs hiện hành; không suy luận rằng có kiểu `VECTOR` thì chắc chắn có DiskANN/`VECTOR_SEARCH`. Nguồn chốt: [CREATE VECTOR INDEX (Preview)](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-vector-index-transact-sql?view=sql-server-ver17) và [VECTOR_SEARCH (Preview)](https://learn.microsoft.com/en-us/sql/t-sql/functions/vector-search-transact-sql?view=sql-server-ver17).
 
 ---
 
@@ -108,6 +119,24 @@ GO
 ```
 
 > `LANGUAGE 1066` là LCID tiếng Việt. Khi dữ liệu của bạn là tiếng khác, chọn language resources phù hợp với môi trường và dữ liệu thực tế.
+
+### Kiểm tra Full-Text đã sẵn sàng chưa
+
+```sql
+-- 1 = Full-Text component đã được cài trên SQL Server instance.
+SELECT FULLTEXTSERVICEPROPERTY('IsFullTextInstalled') AS IsFullTextInstalled;
+
+-- Kiểm tra language resource tiếng Việt có trên instance hay không.
+SELECT lcid, name
+FROM sys.fulltext_languages
+WHERE lcid = 1066;
+
+-- 0 thường là idle; trạng thái khác cho biết catalog đang populate/thay đổi.
+SELECT FULLTEXTCATALOGPROPERTY('DP800_FTC', 'PopulateStatus') AS PopulateStatus;
+GO
+```
+
+Nếu query vừa tạo index nhưng chưa thấy kết quả, kiểm tra population status, full-text crawl log, unique key, language/word breaker, stoplist và transaction đã commit. `CHANGE_TRACKING AUTO` ở đây là cơ chế duy trì **full-text index**, không phải SQL Server Change Tracking dùng cho pipeline re-embedding.
 
 ---
 
@@ -244,6 +273,8 @@ SELECT VECTOR_NORM(@v, 'norm2') AS L2Norm;
 GO
 ```
 
+Các norm type hiện hỗ trợ là `norm1` (L1), `norm2` (L2) và `norminf` (giá trị tuyệt đối lớn nhất).
+
 ### Normalize
 Chuẩn hóa vector về độ dài 1 theo norm type.
 
@@ -254,6 +285,8 @@ GO
 ```
 
 > **Sửa lỗi tài liệu cũ:** syntax không phải chỉ `VECTOR_NORMALIZE(vector)`; current function cần chỉ rõ norm type.
+
+Azure OpenAI embedding vectors đã được normalize theo tài liệu Microsoft; đừng normalize lặp lại chỉ vì “vector search luôn cần normalize”. Với model khác, hãy kiểm tra model contract và dùng cùng preprocessing cho cả corpus lẫn query.
 
 ---
 
@@ -274,6 +307,16 @@ VECTOR_DISTANCE('cosine' | 'euclidean' | 'dot', vector1, vector2)
 | `dot` | negative dot product theo SQL vector distance semantics | khi model/retrieval design phù hợp dot-product |
 
 > **Metric phải đồng nhất:** Query `VECTOR_SEARCH` chỉ tận dụng ANN index tương thích khi metric của search phù hợp với metric của vector index.
+
+Trong SQL, **distance càng nhỏ càng gần** cho cả ba metric:
+
+| Metric | Khoảng giá trị hiện hành | Ghi chú threshold |
+|---|---:|---|
+| `cosine` | 0 đến 2 | Không mặc định coi 0.8 là “80% giống”; phải calibrate |
+| `euclidean` | 0 đến +∞ | Phụ thuộc scale/magnitude |
+| `dot` | -∞ đến +∞ | SQL trả **negative dot product**, nên nhỏ hơn vẫn gần hơn |
+
+Không sao chép một threshold giữa model/version/metric khác nhau. Hãy dùng tập query đã gắn nhãn để đo precision/recall rồi chọn cutoff.
 
 ### Exact search bằng `VECTOR_DISTANCE`
 
@@ -343,10 +386,10 @@ GO
 
 > **Quan trọng khi chạy lab:** Current/latest vector index yêu cầu tối thiểu **100 rows có non-NULL vectors**. Bảng `SearchDocuments` phía trên chỉ có vài row để học Full-Text nên đừng chạy lệnh index này trên bảng đó cho đến khi đã populate đủ dữ liệu. Lab chạy độc lập ngay dưới đây minh họa đầy đủ điều kiện này.
 
-### Lab chạy độc lập: 100 rows → DiskANN → approximate search
+### Lab chạy độc lập: 100 rows → DiskANN → chọn đúng syntax theo index version
 
 ```sql
--- SQL Server 2025: bật Preview feature khi platform yêu cầu
+-- Chỉ SQL Server 2025 cần bước này; Azure SQL DB/Fabric không cần.
 ALTER DATABASE SCOPED CONFIGURATION SET PREVIEW_FEATURES = ON;
 GO
 
@@ -373,10 +416,10 @@ SELECT
         JSON_ARRAY
         (
             CAST(value * 0.01 AS float),
-            CAST(value * 0.02 AS float),
-            CAST(value * 0.03 AS float),
-            CAST(value * 0.04 AS float),
-            CAST(value * 0.05 AS float)
+            CAST((value % 7) * 0.10 AS float),
+            CAST((value % 11) * 0.08 AS float),
+            CAST((value % 13) * 0.06 AS float),
+            CAST(((value * value) % 17) * 0.05 AS float)
         ) AS vector(5)
     )
 FROM GENERATE_SERIES(1, 100);
@@ -391,8 +434,21 @@ WITH
 );
 GO
 
+-- Xác định version trước khi chọn cú pháp query.
+SELECT
+    i.name,
+    JSON_VALUE(v.build_parameters, '$.Version') AS IndexVersion
+FROM sys.vector_indexes AS v
+JOIN sys.indexes AS i
+  ON i.object_id = v.object_id
+ AND i.index_id = v.index_id
+WHERE v.object_id = OBJECT_ID(N'dbo.VectorIndexDemo');
+GO
+
 DECLARE @qv vector(5) = '[0.3,0.3,0.3,0.3,0.3]';
 
+-- PATH A: chỉ chạy khi IndexVersion >= 3
+-- (hiện là Azure SQL Database/Fabric sau khi rollout tới region).
 SELECT TOP (5) WITH APPROXIMATE
     d.Id,
     d.Title,
@@ -408,6 +464,29 @@ ORDER BY r.distance;
 GO
 ```
 
+Nếu `IndexVersion < 3` (điển hình là SQL Server 2025 theo ghi chú current), dùng legacy syntax sau; đây là compatibility syntax, không phải mẫu cho thiết kế v3 mới:
+
+```sql
+DECLARE @qv vector(5) = '[0.3,0.3,0.3,0.3,0.3]';
+
+SELECT TOP (5)
+    d.Id,
+    d.Title,
+    r.distance
+FROM VECTOR_SEARCH
+(
+    TABLE = dbo.VectorIndexDemo AS d,
+    COLUMN = Embedding,
+    SIMILAR_TO = @qv,
+    METRIC = 'cosine',
+    TOP_N = 5
+) AS r
+ORDER BY r.distance;
+GO
+```
+
+> **Version trap:** Dùng `TOP_N` với index v3 gây `Msg 42274`; dùng syntax v3 trên earlier index cũng không phải đường đúng. Query `sys.vector_indexes` trước, rồi chọn đúng nhánh.
+
 > **Bẫy thi:** Với SQL Database Engine hiện hành, `CREATE VECTOR INDEX` chỉ hỗ trợ `TYPE = 'DiskANN'`. HNSW tồn tại trong nhiều vector systems khác nhưng không phải đáp án T-SQL `CREATE VECTOR INDEX` này.
 
 ---
@@ -416,15 +495,35 @@ GO
 
 ## 12. Preview/availability cần hiểu
 
-`CREATE VECTOR INDEX` và approximate `VECTOR_SEARCH` vẫn có các phần Preview/rollout theo platform.
+`CREATE VECTOR INDEX` và `VECTOR_SEARCH` là **Preview** trên toàn bộ các platform đang được trang docs liệt kê.
 
 - SQL Server 2025: cần `PREVIEW_FEATURES` để dùng Preview functionality này.
 - Azure SQL Database / SQL database in Fabric: availability có thể rollout theo region/index version.
-- Latest vector index generation hiện có behavior mới so với earlier versions.
+- Latest vector index v3 hiện chỉ có trên Azure SQL Database / SQL database in Fabric và rollout theo region.
+- SQL Server 2025 được liệt kê cho Preview function/index nhưng **chưa có v3** theo ghi chú hiện hành.
+- Azure SQL Managed Instance không được liệt kê cho `CREATE VECTOR INDEX`/`VECTOR_SEARCH` ở thời điểm rà soát.
 
 ```sql
 -- SQL Server 2025 khi cần Preview feature
 ALTER DATABASE SCOPED CONFIGURATION SET PREVIEW_FEATURES = ON;
+GO
+```
+
+### Earlier index vs latest v3
+
+| Hành vi | Earlier vector index | Latest v3 |
+|---|---|---|
+| Approximate syntax | `TOP_N` bên trong `VECTOR_SEARCH` (deprecated) | `SELECT TOP (N) WITH APPROXIMATE`, không có `TOP_N` |
+| Relational predicate | Post-filter; có thể trả ít hơn N | Iterative filtering |
+| DML | Table read-only theo mặc định; có thể bật `ALLOW_STALE_VECTOR_INDEX` nếu chấp nhận stale results | Full `INSERT`/`UPDATE`/`DELETE`/`MERGE`, background maintenance |
+| Strategy | ANN theo legacy behavior | Optimizer chọn ANN hay exact kNN; có `FORCE_ANN_ONLY` khi cần buộc |
+| Migration | Không upgrade in-place | Drop/recreate index; version trong `build_parameters` phải ≥ 3 |
+
+`ALLOW_STALE_VECTOR_INDEX` là giải pháp compatibility cho earlier index, **không** biến nó thành v3 và không cung cấp iterative filtering. Khi platform đã hỗ trợ v3, kế hoạch đúng là maintenance window → drop/recreate → verify version/quality.
+
+```sql
+-- Chỉ cho earlier index khi workload phải ghi và chấp nhận kết quả ANN stale.
+ALTER DATABASE SCOPED CONFIGURATION SET ALLOW_STALE_VECTOR_INDEX = ON;
 GO
 ```
 
@@ -437,6 +536,7 @@ Các điểm dễ bị hỏi theo scenario hoặc dễ làm lab lỗi:
 - Base table cần **clustered primary key** cho current vector index requirements.
 - Cần ít nhất **100 rows có non-NULL vector** trước khi tạo current vector index.
 - Vector index hiện không partition được.
+- Vector index hiện không được replicate tới subscriber.
 - Bảng đang có vector index không `TRUNCATE TABLE` trực tiếp; cần drop index → truncate → reload → recreate.
 - Vector indexes không deploy trực tiếp thuận lợi qua DACPAC/BACPAC theo current limitation; thường recreate sau data load/import.
 - Latest generation hỗ trợ DML và background maintenance; older index generations có limitations khác.
@@ -457,15 +557,37 @@ JOIN sys.tables AS t
 GO
 ```
 
-Current latest index generation còn có DMV để monitor vector-index maintenance/health, ví dụ `sys.dm_db_vector_indexes` khi platform/version hỗ trợ.
+Với v3, dùng `sys.dm_db_vector_indexes` để xem background maintenance và staleness:
+
+```sql
+SELECT
+    OBJECT_SCHEMA_NAME(d.object_id) AS SchemaName,
+    OBJECT_NAME(d.object_id) AS TableName,
+    i.name AS IndexName,
+    d.approximate_staleness_percent,
+    d.quantized_keys_used_percent,
+    d.last_background_task_time,
+    d.last_background_task_succeeded,
+    d.last_background_task_duration_seconds,
+    d.last_background_task_processed_inserts,
+    d.last_background_task_processed_deletes,
+    d.last_background_task_error_message
+FROM sys.dm_db_vector_indexes AS d
+JOIN sys.indexes AS i
+  ON i.object_id = d.object_id
+ AND i.index_id = d.index_id;
+GO
+```
+
+Pending DML vẫn có thể xuất hiện trong kết quả search, nhưng ranking có thể chưa tối ưu cho đến khi graph background maintenance bắt kịp. `approximate_staleness_percent` cao hoặc task thất bại là tín hiệu cần điều tra, không phải tự động kết luận index “mất dữ liệu”.
 
 ---
 
 # 📘 PHẦN 6 — `VECTOR_SEARCH`: SYNTAX HIỆN HÀNH
 
-## 14. Approximate search — latest syntax
+## 14. Approximate search — latest v3 syntax
 
-Với current/latest vector index:
+Với **latest vector index v3** (hiện Azure SQL Database/Fabric sau khi rollout):
 
 ```sql
 DECLARE @qv vector(1536) =
@@ -497,6 +619,26 @@ GO
 - Distance phải order **ASC**.
 - Với approximate query, `distance` là ordering key hợp lệ theo current restrictions.
 - `TOP_N` parameter trong `VECTOR_SEARCH` là syntax cũ/deprecated cho older vector index versions.
+- `GROUP BY`, aggregate/window/set operations, `DISTINCT`, multiple `ORDER BY` columns và một số `APPLY` patterns cần đặt approximate query ở **subquery** rồi xử lý ở outer query.
+
+### Khi cần chứng minh ANN index phải được dùng
+
+Optimizer v3 có thể tự chọn ANN index hoặc exact kNN. `FORCE_ANN_ONLY` chỉ dùng khi bạn chủ ý buộc ANN (ví dụ diagnostic/SLA), và sẽ lỗi nếu không có compatible vector index hoặc không dùng `TOP ... WITH APPROXIMATE`:
+
+```sql
+SELECT TOP (10) WITH APPROXIMATE
+    d.DocumentId,
+    r.distance
+FROM VECTOR_SEARCH
+(
+    TABLE = dbo.SearchDocuments AS d,
+    COLUMN = Embedding,
+    SIMILAR_TO = @qv,
+    METRIC = 'cosine'
+) AS r WITH (FORCE_ANN_ONLY)
+ORDER BY r.distance;
+GO
+```
 
 ---
 
@@ -527,9 +669,9 @@ Không có compatible ANN index thì engine có thể thực hiện full scan/kN
 
 ---
 
-## 16. Iterative filtering — cập nhật 2026 rất đáng nhớ
+## 16. Iterative filtering — chỉ latest v3, cập nhật 2026 rất đáng nhớ
 
-Latest vector indexes hỗ trợ **iterative filtering**: relational predicates có thể được áp dụng trong quá trình vector search thay vì chỉ post-filter.
+Latest vector indexes v3 hỗ trợ **iterative filtering**: relational predicates có thể được áp dụng trong quá trình vector search thay vì chỉ post-filter. Earlier indexes lấy `TOP_N` vector candidates trước rồi mới filter, nên có thể trả ít hơn N rows dù dữ liệu phù hợp vẫn tồn tại; khi chưa migrate, thường phải oversample `TOP_N` có kiểm soát.
 
 ```sql
 SELECT TOP (5) WITH APPROXIMATE
@@ -630,7 +772,7 @@ RRF(d) = Σ 1 / (k + rank_i(d))
 
 ## 20. Lab Hybrid + RRF với Full-Text thật và Vector thật
 
-> Lab này dùng **exact vector ranking** để code dễ hiểu và chạy được ngay cả khi chưa tạo ANN index. Khi corpus lớn, có thể thay phần vector candidates bằng `VECTOR_SEARCH ... WITH APPROXIMATE`.
+> Lab này dùng **exact vector ranking** để code dễ hiểu và chạy được ngay cả khi chưa tạo ANN index. Khi corpus lớn, có thể thay phần vector candidates bằng v3 `VECTOR_SEARCH ... WITH APPROXIMATE`, hoặc dùng legacy `TOP_N` nếu index/platform vẫn là earlier version.
 
 ```sql
 CREATE OR ALTER PROCEDURE dbo.SearchHybridRRF
@@ -734,9 +876,9 @@ GO
 
 ---
 
-## 21. ANN version cho vector candidates
+## 21. Latest-v3 ANN version cho vector candidates
 
-Khi đã có current vector index và đủ dữ liệu:
+Khi đã có **v3 index** và đủ dữ liệu trên Azure SQL Database/Fabric:
 
 ```sql
 DECLARE @qv vector(1536) =
@@ -817,6 +959,19 @@ Bạn nên đo:
 
 Đây là cách đánh giá đúng bản chất ANN: **speed vs recall/quality**.
 
+### Troubleshooting nhanh theo error/symptom
+
+| Triệu chứng | Nguyên nhân có khả năng cao | Cách xử lý |
+|---|---|---|
+| FTS vừa tạo nhưng chưa có result | Population chưa xong, language/word breaker/stoplist không phù hợp | Kiểm tra `FULLTEXTCATALOGPROPERTY`, crawl log, `sys.fulltext_languages` |
+| `Msg 42266` khi tạo vector index | Ít hơn 100 non-NULL vectors | Populate đủ dữ liệu rồi tạo lại; dataset nhỏ dùng exact kNN |
+| `Msg 42274` | Dùng `TOP_N` với vector index v3 | Bỏ `TOP_N`, dùng `SELECT TOP (N) WITH APPROXIMATE` |
+| Approximate + filter trả ít hơn N | Earlier index chỉ post-filter | Migrate/recreate thành v3 khi platform hỗ trợ hoặc oversample legacy `TOP_N` |
+| ANN index không được chọn | Optimizer chọn exact, thiếu compatible index, metric/column mismatch | Kiểm tra plan, `sys.vector_indexes`; dùng `FORCE_ANN_ONLY` chỉ để buộc/diagnose khi đủ điều kiện |
+| Ranking giảm sau nhiều DML | Background graph maintenance đang backlog | Xem `approximate_staleness_percent` và last task/error trong `sys.dm_db_vector_indexes` |
+| Dimension/type error | Query vector khác dimension/base type hoặc model version | `VECTORPROPERTY`, model/dimension metadata; embed corpus/query cùng version |
+| Hybrid rank bất thường | Cộng raw FTS score với raw vector distance | Rank từng list rồi dùng RRF; đánh giá relevance trên labeled queries |
+
 ---
 
 # 🧠 PHẦN 11 — EXAM TRAPS
@@ -836,7 +991,7 @@ Sai với current SQL Database Engine syntax. `CREATE VECTOR INDEX` hiện dùng
 Sai. `VECTOR_DISTANCE` là exact distance calculation.
 
 ### Bẫy 5 — Current `VECTOR_SEARCH` luôn cần `TOP_N`
-Sai. `TOP_N` là deprecated syntax cho earlier vector indexes. Latest syntax dùng `SELECT TOP(N) WITH APPROXIMATE`.
+Sai. Earlier index cần legacy `TOP_N`; v3 dùng `SELECT TOP(N) WITH APPROXIMATE`. Phải kiểm tra version/platform.
 
 ### Bẫy 6 — `WITH APPROXIMATE` nhưng không `ORDER BY distance`
 Sai theo current syntax requirements.
@@ -852,6 +1007,12 @@ Sai. Tăng complexity; chỉ dùng khi lexical + semantic đều tạo giá tr�
 
 ### Bẫy 10 — Vector index tạo được khi table có 3 rows
 Current latest vector index yêu cầu ít nhất 100 non-NULL vectors.
+
+### Bẫy 11 — Azure SQL Managed Instance có `VECTOR` nên chắc chắn có DiskANN
+Sai theo `Applies to` hiện hành. MI có vector type/functions theo policy nhưng không được liệt kê cho `CREATE VECTOR INDEX`/`VECTOR_SEARCH` ở ngày rà soát.
+
+### Bẫy 12 — “Semantic search”, “semantic ranker” và HNSW là cùng một feature
+Sai. Native SQL semantic vector search dùng `VECTOR`/DiskANN. **Azure AI Search semantic ranker** là service khác, rerank top BM25/RRF results và có captions/answers; HNSW trong Azure AI Search cũng không phải `TYPE` của T-SQL `CREATE VECTOR INDEX`. SQL Server Full-Text Semantic Search truyền thống lại là một feature khác nữa.
 
 ---
 
@@ -882,7 +1043,7 @@ Corpus có 500 rows và exact correctness quan trọng hơn latency. Chọn gi�
 ---
 
 ## Question 3 — Current approximate syntax
-Cú pháp current/latest phù hợp là:
+Azure SQL Database đã có vector index v3. Cú pháp phù hợp là:
 
 - A. `VECTOR_SEARCH(... TOP_N=10)` bắt buộc.
 - B. `SELECT TOP (10) WITH APPROXIMATE ... FROM VECTOR_SEARCH(...) ORDER BY distance`.
@@ -955,8 +1116,9 @@ Bạn đã nắm chắc file 09 nếu có thể:
 - [ ] Dùng `VECTOR_DISTANCE` với cosine/euclidean/dot.
 - [ ] Giải thích exact kNN/ENN vs ANN.
 - [ ] Nhớ current `CREATE VECTOR INDEX ... TYPE='DiskANN'`.
+- [ ] Phân biệt platform: MI hiện không có vector index/search trong `Applies to`; SQL Server 2025 cần `PREVIEW_FEATURES`; v3 hiện chỉ Azure SQL DB/Fabric.
 - [ ] Nhớ minimum current vector-index rows và key limitations.
-- [ ] Viết current `VECTOR_SEARCH` với `TOP (N) WITH APPROXIMATE`.
+- [ ] Viết v3 `VECTOR_SEARCH` với `TOP (N) WITH APPROXIMATE` và earlier-index syntax với `TOP_N`.
 - [ ] Biết `TOP_N` là legacy/deprecated cho earlier index versions.
 - [ ] Giải thích iterative filtering.
 - [ ] Thiết kế Full-Text + Vector hybrid.
@@ -978,9 +1140,14 @@ Bạn đã nắm chắc file 09 nếu có thể:
 9. [Full-Text Search functions](https://learn.microsoft.com/en-us/sql/relational-databases/system-functions/full-text-search-and-semantic-search-functions-transact-sql?view=sql-server-ver17)
 10. [sys.fulltext_languages — kiểm tra language/LCID có sẵn](https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-fulltext-languages-transact-sql?view=sql-server-ver17)
 11. [Microsoft Learn — Implement AI capabilities in database solutions](https://learn.microsoft.com/en-us/training/paths/implement-ai-capabilities-database-solutions/)
+12. [sys.vector_indexes](https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-vector-indexes-transact-sql?view=sql-server-ver17)
+13. [sys.dm_db_vector_indexes](https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-db-vector-indexes-transact-sql?view=sql-server-ver17)
+14. [Azure AI Search semantic ranker overview — service riêng](https://learn.microsoft.com/en-us/azure/search/semantic-search-overview)
+15. [Azure AI Search hybrid search ranking/RRF — service riêng](https://learn.microsoft.com/en-us/azure/search/hybrid-search-ranking)
+16. [Microsoft Learn module — Design and implement intelligent search with SQL](https://learn.microsoft.com/en-us/training/modules/design-implement-intelligent-search-with-sql/)
 
 ---
 
 ## Ghi chú versioning
 
-Vector index/search đang thay đổi nhanh và một số khả năng vẫn Preview. Tài liệu này ưu tiên syntax current/latest tại ngày rà soát và ghi riêng legacy behavior để bạn nhận diện câu hỏi hoặc môi trường cũ, thay vì học lẫn hai thế hệ syntax.
+Vector index/search vẫn là Preview và thay đổi nhanh. Tài liệu này ghi song song v3 và legacy vì **cả hai đều có thể là câu trả lời đúng tùy platform/index version**; không học một cú pháp rồi áp dụng máy móc cho mọi môi trường.

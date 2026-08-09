@@ -158,9 +158,16 @@ Nguồn:
 
 # 5. GITHUB COPILOT IN SSMS — TRẠNG THÁI HIỆN HÀNH
 
-## 5.1 SSMS 21 vs SSMS 22
+## 5.1 SSMS version matrix — đừng gom mọi capability thành “SSMS 22+”
 
 Copilot cũ trong SSMS 21 đã được thay bởi **GitHub Copilot in SSMS 22**. Tài liệu ôn thi hiện tại nên học theo SSMS 22.
+
+| Capability | Phiên bản tối thiểu theo tài liệu hiện hành | Trạng thái cần nhớ |
+|---|---:|---|
+| Chat/code assistance | SSMS 22 với AI Assistance workload | GitHub account có Copilot access, hoặc entitlement miễn phí được hỗ trợ |
+| Autocompletions trong query editor | **SSMS 22.2** | Không suy diễn rằng có ở mọi bản 22.0/22.1 |
+| Agent mode | **SSMS 22.7** | **Preview** |
+| MCP servers trong SSMS | **SSMS 22.7** + Agent mode | Ask mode không gọi MCP |
 
 GitHub Copilot in SSMS hỗ trợ SQL Server, Azure SQL Database, Azure SQL Managed Instance và SQL Database in Fabric.
 
@@ -175,8 +182,8 @@ Nguồn:
 
 Bạn không cần học từng pixel UI. Hãy nhớ prerequisites:
 
-1. Dùng **SSMS 22+**.
-2. Cài/enable GitHub Copilot integration/AI Assistance theo installer hiện hành.
+1. Dùng **SSMS 22** cho Chat; dùng **22.7+** nếu scenario yêu cầu Agent mode/MCP.
+2. Cài **AI Assistance workload** bằng SSMS installer.
 3. Đăng nhập GitHub account có Copilot access phù hợp.
 4. Organization policy có thể kiểm soát feature/model access.
 5. Connect tới database bằng login có đúng permissions.
@@ -184,6 +191,8 @@ Bạn không cần học từng pixel UI. Hãy nhớ prerequisites:
 ### Điểm cực quan trọng
 
 Copilot chạy query dựa trên **permissions của login hiện tại**. Nếu login không được `SELECT` table, Copilot không biến login đó thành admin.
+
+Theo trang Overview hiện hành, prompts, responses và system metadata của Copilot in SSMS không được SSMS/Copilot giữ lại để train/retrain model. Tuy vậy, tổ chức vẫn phải áp dụng data-classification, tenant/organization policy và quy tắc không đưa secret vào prompt; một privacy statement của sản phẩm không phải lý do để bỏ governance.
 
 ---
 
@@ -210,6 +219,18 @@ Ask mode => không hỗ trợ MCP server tools trong SSMS
 ```
 
 Sau khi thêm MCP server, tools có thể **disabled by default** và cần bật theo nhu cầu.
+
+Administrator có thể tắt Agent/MCP hoặc đặt **MCP server allow list**. Vì vậy “đã thêm server vào `%USERPROFILE%\.mcp.json`” chưa bảo đảm server/tool được phép dùng trong organization. File này là global configuration theo user cho SSMS, không phải repository config:
+
+```json
+{
+  "servers": {
+    "approved-service": {
+      "url": "https://mcp.contoso.example/mcp"
+    }
+  }
+}
+```
 
 Nguồn: [Use MCP servers with GitHub Copilot in SSMS](https://learn.microsoft.com/en-us/ssms/github-copilot/mcp-servers)
 
@@ -567,6 +588,14 @@ Có role:
 ```bash
 dab start --mcp-stdio role:authenticated --config ./dab-config.json
 ```
+
+Các chi tiết dễ bị hỏi/sai khi cấu hình:
+
+- `role:<name>` là positional argument và phải đứng **ngay sau** `--mcp-stdio`; bỏ qua thì mặc định là `anonymous`;
+- `runtime.mcp.path` chỉ dùng cho HTTP, bị bỏ qua trong `stdio`;
+- `stdio` ép authentication provider thành `Simulator`, phù hợp local development chứ không phải cơ chế bảo vệ production HTTP endpoint;
+- mỗi incoming request trong `stdio` hiện bị giới hạn **1 MB**;
+- thiếu `runtime.mcp` hoặc đặt `enabled: false` thì DAB không khởi động ở `stdio` mode.
 
 Nguồn: [Stdio transport for SQL MCP Server](https://learn.microsoft.com/en-us/azure/data-api-builder/mcp/stdio-transport)
 
