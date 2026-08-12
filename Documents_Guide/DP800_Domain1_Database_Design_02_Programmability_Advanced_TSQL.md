@@ -1,39 +1,55 @@
-# DP-800 Domain 1: Implement Programmability & Write Advanced T-SQL Code
+# DP-800 Miền 1 — Lập trình cơ sở dữ liệu và viết T-SQL nâng cao
 
-> **Miền 1:** Design and Develop Database Solutions (35–40%)  
-> **Chủ đề:** Implement programmability objects + Write advanced T-SQL code  
+> **Miền 1:** Thiết kế và phát triển giải pháp cơ sở dữ liệu (35–40%)  
+> **Chủ đề:** View, function, stored procedure, trigger và truy vấn T-SQL nâng cao  
 > **Blueprint:** DP-800 skills measured as of **March 12, 2026**  
-> **Rà soát/cập nhật:** **09/08/2026**
+> **Cập nhật cách trình bày:** **12/08/2026**
 
 > [!IMPORTANT]
 > File này bám đúng blueprint DP-800. Các tính năng SQL Server 2025 đang ở **Preview** được đánh dấu rõ để bạn không nhầm “Preview” với “không thi”. Microsoft nêu rằng phần lớn câu hỏi dựa trên tính năng GA, nhưng tính năng Preview có thể xuất hiện nếu được sử dụng phổ biến.
 
+## Chương này giúp bạn làm được việc gì?
+
+File 01 dạy cách **lưu dữ liệu**. File này dạy cách đặt **logic xử lý gần dữ liệu** và cách viết những truy vấn khó hơn một câu `SELECT` thông thường.
+
+Ví dụ, một hệ thống bán hàng cần:
+
+- một view chỉ hiển thị khách hàng đang hoạt động;
+- một function tính hoặc trả về tập dữ liệu có thể tái sử dụng;
+- một stored procedure tạo đơn hàng trong transaction;
+- một trigger ghi lịch sử thay đổi;
+- một CTE để duyệt cây nhân viên quản lý cấp dưới;
+- một window function để tính tổng doanh thu lũy kế nhưng vẫn giữ từng đơn hàng;
+- các hàm JSON, biểu thức chính quy và so khớp gần đúng để xử lý dữ liệu hiện đại.
+
+Đề thi không chỉ hỏi “cú pháp nào đúng”. Đề thường mô tả một yêu cầu rồi yêu cầu bạn chọn **đúng loại đối tượng** hoặc phát hiện lỗi trong đoạn lệnh. Vì vậy mỗi phần sẽ trả lời bốn câu: tính năng là gì, dùng khi nào, lệnh hoạt động ra sao và bẫy nào dễ chọn sai.
+
 ---
 
-# 1. CHECKLIST BLUEPRINT — PHẢI NẮM ĐƯỢC GÌ?
+# 1. PHẠM VI KIẾN THỨC — PHẢI NẮM ĐƯỢC GÌ?
 
 Theo DP-800 Study Guide, phần này yêu cầu bạn có thể:
 
-## Implement programmability objects
+## Các đối tượng lập trình trong cơ sở dữ liệu
 
-- Design and implement **views**.
-- Design and implement **scalar functions**.
-- Design and implement **table-valued functions (TVFs)**.
-- Design and implement **stored procedures**.
-- Design and implement **triggers**.
+- thiết kế và tạo **view**;
+- thiết kế và tạo **hàm vô hướng** (scalar function);
+- thiết kế và tạo **hàm trả về bảng** (table-valued function — TVF);
+- thiết kế và tạo **stored procedure**;
+- thiết kế và tạo **trigger**.
 
-## Write advanced T-SQL code
+## Viết T-SQL nâng cao
 
-- Implement **Common Table Expressions (CTEs)**.
-- Implement **window functions**.
-- Implement JSON functions, gồm:
+- dùng **Common Table Expression (CTE)**;
+- dùng **hàm cửa sổ** (window function);
+- dùng các hàm JSON, gồm:
   - `JSON_OBJECT`
   - `JSON_ARRAY`
   - `JSON_ARRAYAGG`
   - `JSON_CONTAINS`
   - `OPENJSON`
   - `JSON_VALUE`
-- Implement regular expression functions:
+- dùng các hàm biểu thức chính quy:
   - `REGEXP_LIKE`
   - `REGEXP_REPLACE`
   - `REGEXP_SUBSTR`
@@ -41,21 +57,21 @@ Theo DP-800 Study Guide, phần này yêu cầu bạn có thể:
   - `REGEXP_COUNT`
   - `REGEXP_MATCHES`
   - `REGEXP_SPLIT_TO_TABLE`
-- Implement fuzzy string matching:
+- dùng các hàm so khớp chuỗi gần đúng:
   - `EDIT_DISTANCE`
   - `EDIT_DISTANCE_SIMILARITY`
   - `JARO_WINKLER_DISTANCE`
-- Implement graph queries with `MATCH`.
-- Implement **correlated queries**.
-- Implement **error handling**.
+- truy vấn graph bằng `MATCH`;
+- viết **truy vấn tương quan**;
+- xử lý lỗi và transaction an toàn.
 
 Nguồn chuẩn: [DP-800 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-800)
 
 ---
 
-# 2. PROGRAMMABILITY OBJECTS — HIỂU ĐÚNG VÀ CHỌN ĐÚNG
+# 2. CÁC ĐỐI TƯỢNG LẬP TRÌNH — HIỂU ĐÚNG VÀ CHỌN ĐÚNG
 
-## 2.1 View
+## 2.1 View — truy vấn được đặt tên và tái sử dụng
 
 ### View là gì?
 
@@ -69,6 +85,8 @@ Dùng View khi cần:
 - tái sử dụng logic `SELECT`.
 
 ### Ví dụ cơ bản
+
+View sau đóng gói điều kiện “khách hàng đang hoạt động”. Ứng dụng đọc view mà không cần lặp lại điều kiện này ở mọi truy vấn.
 
 ```sql
 CREATE OR ALTER VIEW dbo.vw_ActiveCustomers
@@ -113,12 +131,14 @@ Indexed View là View được vật lý hóa bằng index. **Index đầu tiên
 
 1. Bật đúng required `SET` options.
 2. View phải deterministic và đáp ứng các hạn chế của Indexed View.
-3. Base objects và view phải phù hợp ownership requirements.
+3. Các đối tượng gốc và view phải đáp ứng yêu cầu về quyền sở hữu.
 4. Tạo view bằng `WITH SCHEMABINDING`.
 5. Tạo `UNIQUE CLUSTERED INDEX` đầu tiên.
 6. Sau đó mới có thể tạo thêm nonclustered indexes.
 
-### Lab hoàn chỉnh
+### Bài thực hành hoàn chỉnh
+
+Bài này tạo indexed view theo đúng trình tự: bật các `SET` option bắt buộc, tạo view có `SCHEMABINDING`, rồi tạo unique clustered index đầu tiên.
 
 ```sql
 SET ANSI_NULLS ON;
@@ -180,9 +200,9 @@ Nguồn: [Create Indexed Views](https://learn.microsoft.com/en-us/sql/relational
 
 ---
 
-# 3. FUNCTIONS — SCALAR, iTVF, mTVF
+# 3. HÀM — HÀM TRẢ MỘT GIÁ TRỊ, iTVF VÀ mTVF
 
-## 3.1 Scalar UDF
+## 3.1 Hàm trả về một giá trị (Scalar UDF)
 
 Trả về **một giá trị**.
 
@@ -205,11 +225,11 @@ GO
 
 ### Khi nào chọn?
 
-Khi logic thực sự là một phép tính scalar tái sử dụng. Không nên mặc định dùng scalar UDF cho mọi xử lý từng dòng chỉ vì code “đẹp”. Các phiên bản hiện đại có Scalar UDF Inlining cho nhiều trường hợp, nhưng không phải mọi UDF đều được inline.
+Chọn khi logic thực sự là một phép tính trả về một giá trị và cần tái sử dụng. Không nên mặc định dùng scalar UDF cho mọi xử lý từng dòng chỉ vì mã trông “gọn”. Các phiên bản hiện đại có Scalar UDF Inlining cho nhiều trường hợp, nhưng không phải UDF nào cũng được nội tuyến.
 
 ---
 
-## 3.2 Inline Table-Valued Function (iTVF)
+## 3.2 Hàm bảng nội tuyến (Inline Table-Valued Function — iTVF)
 
 Trả về một table từ **một câu `SELECT`**. Đây là dạng thường rất thân thiện với optimizer.
 
@@ -238,11 +258,11 @@ WHERE OrderDate >= '2026-01-01';
 GO
 ```
 
-**Mental model:** iTVF gần với “parameterized view”.
+**Cách hình dung:** iTVF gần giống một view có nhận tham số.
 
 ---
 
-## 3.3 Multi-Statement TVF (mTVF)
+## 3.3 Hàm bảng nhiều câu lệnh (Multi-Statement TVF — mTVF)
 
 Có table variable nội bộ và nhiều statements.
 
@@ -270,7 +290,7 @@ END;
 GO
 ```
 
-### Thi cử: chọn object nào?
+### Trong đề thi: chọn đối tượng nào?
 
 | Nhu cầu | Object thường phù hợp |
 |---|---|
@@ -283,7 +303,7 @@ Không học theo câu “mTVF luôn xấu”. Hãy hiểu trade-off và chọn 
 
 ---
 
-# 4. STORED PROCEDURES
+# 4. STORED PROCEDURE
 
 Stored Procedure phù hợp khi cần:
 
@@ -294,7 +314,9 @@ Stored Procedure phù hợp khi cần:
 - encapsulate nghiệp vụ;
 - gọi từ application/service.
 
-## 4.1 Procedure với input + output parameter
+## 4.1 Procedure có tham số đầu vào và đầu ra
+
+Procedure sau nhận dữ liệu đầu vào, thực hiện thao tác nghiệp vụ và trả một giá trị qua output parameter. Hãy chú ý sự khác nhau giữa tham số đầu vào và giá trị trả ra.
 
 ```sql
 CREATE OR ALTER PROCEDURE dbo.usp_CreateOrder
@@ -323,7 +345,7 @@ SELECT @OrderId AS NewOrderId;
 GO
 ```
 
-## 4.2 Dynamic SQL an toàn — `sp_executesql`
+## 4.2 SQL động an toàn — `sp_executesql`
 
 **Không nối trực tiếp input của người dùng vào câu SQL.**
 
@@ -354,7 +376,7 @@ GO
 
 ---
 
-# 5. TRIGGERS — AFTER, INSTEAD OF, INSERTED/DELETED
+# 5. TRIGGER — `AFTER`, `INSTEAD OF`, `inserted` VÀ `deleted`
 
 ## 5.1 AFTER trigger
 
@@ -410,7 +432,7 @@ GO
 
 ## 5.2 INSTEAD OF trigger
 
-Thay thế DML gốc. Một use case điển hình là điều khiển cập nhật qua complex View.
+Trigger này chạy thay cho câu DML gốc. Một trường hợp sử dụng điển hình là kiểm soát việc cập nhật qua một view phức tạp.
 
 ```sql
 CREATE OR ALTER TRIGGER dbo.trg_vwCustomerContact_Update
@@ -431,15 +453,15 @@ END;
 GO
 ```
 
-> `TRUNCATE TABLE` không kích hoạt DML `DELETE` trigger. Đây là exam trap phổ biến.
+> `TRUNCATE TABLE` không kích hoạt DML `DELETE` trigger. Đây là bẫy phổ biến trong đề.
 
 Nguồn: [DML Triggers](https://learn.microsoft.com/en-us/sql/relational-databases/triggers/dml-triggers?view=sql-server-ver17)
 
 ---
 
-# 6. COMMON TABLE EXPRESSIONS (CTEs)
+# 6. COMMON TABLE EXPRESSION (CTE)
 
-## 6.1 Non-recursive CTE
+## 6.1 CTE không đệ quy
 
 CTE chỉ tồn tại cho **statement ngay sau nó**.
 
@@ -458,47 +480,63 @@ WHERE LifetimeValue >= 10000;
 GO
 ```
 
-## 6.2 Recursive CTE
+## 6.2 CTE đệ quy
 
-Gồm:
+CTE đệ quy là CTE tự tham chiếu để đi qua dữ liệu có quan hệ cha–con, chẳng hạn sơ đồ tổ chức, cây danh mục hoặc cấu trúc thư mục.
 
-1. **Anchor member** — điểm bắt đầu.
+Nó gồm bốn phần:
+
+1. **Phần neo (anchor member)** — điểm bắt đầu.
 2. `UNION ALL`.
-3. **Recursive member** — tham chiếu lại CTE.
+3. **Phần đệ quy (recursive member)** — tham chiếu lại CTE.
 4. Điều kiện tự dừng.
 
 ```sql
 WITH Org AS
 (
-    -- Anchor: CEO
+    -- 1. Điểm bắt đầu: nhân viên không có quản lý chính là CEO.
     SELECT EmployeeId, ManagerId, EmployeeName, 0 AS LevelNo
     FROM dbo.Employees
     WHERE ManagerId IS NULL
 
     UNION ALL
 
-    -- Recursive member
+    -- 2. Mỗi vòng lặp tìm nhân viên có ManagerId bằng EmployeeId
+    --    của cấp vừa tìm được, rồi tăng LevelNo lên 1.
     SELECT e.EmployeeId, e.ManagerId, e.EmployeeName, o.LevelNo + 1
     FROM dbo.Employees AS e
     INNER JOIN Org AS o
         ON e.ManagerId = o.EmployeeId
 )
+-- 3. Đọc toàn bộ cây đã tạo, theo thứ tự từ cấp cao xuống thấp.
 SELECT *
 FROM Org
 ORDER BY LevelNo, EmployeeId
+    -- 4. Dừng và báo lỗi nếu quá trình đệ quy vượt 100 cấp,
+    --    tránh vòng lặp vô hạn.
 OPTION (MAXRECURSION 100);
 GO
 ```
 
-**Exam clue:** hierarchical parent-child traversal ⇒ recursive CTE là ứng viên tự nhiên.
+**Cách đọc kết quả:** CEO có `LevelNo = 0`; cấp dưới trực tiếp có `LevelNo = 1`; cấp tiếp theo là 2, v.v. Nếu dữ liệu có vòng lặp quản lý, ví dụ A quản lý B nhưng B lại quản lý A, `MAXRECURSION` giúp truy vấn không chạy vô hạn.
+
+> **Dấu hiệu nhận biết trong đề:** yêu cầu duyệt quan hệ cha–con nhiều cấp thường hướng đến recursive CTE. Nếu chỉ nối hai bảng ở một cấp cố định, một phép `JOIN` thông thường có thể đơn giản hơn.
 
 ---
 
-# 7. WINDOW FUNCTIONS — PHẢI PHÂN BIỆT ĐƯỢC
+# 7. HÀM CỬA SỔ — PHẢI PHÂN BIỆT ĐƯỢC
 
-Window function tính toán trên một “cửa sổ” rows nhưng **không collapse rows** như `GROUP BY`.
+Hàm cửa sổ tính toán trên một nhóm dòng có liên quan nhưng **không gom nhiều dòng thành một dòng** như `GROUP BY`. Nhờ vậy, bạn vừa giữ được chi tiết từng đơn hàng, vừa tính được thứ hạng, giá trị trước/sau hoặc tổng lũy kế.
 
-## 7.1 Ranking
+Ba thành phần cần đọc trong `OVER(...)`:
+
+- `PARTITION BY`: chia dữ liệu thành các nhóm độc lập;
+- `ORDER BY`: xác định thứ tự bên trong mỗi nhóm;
+- khung cửa sổ: xác định những dòng nào quanh dòng hiện tại tham gia phép tính.
+
+## 7.1 Xếp hạng
+
+**Bài toán:** xếp hạng đơn hàng riêng cho từng khách hàng và chia toàn bộ đơn hàng thành bốn nhóm theo giá trị.
 
 ```sql
 SELECT
@@ -528,9 +566,11 @@ FROM dbo.Orders;
 GO
 ```
 
+**Cách đọc lệnh:** mọi hàm dùng `PARTITION BY CustomerId` sẽ bắt đầu lại từ 1 khi sang khách hàng mới. Riêng `NTILE(4)` không có `PARTITION BY`, nên nó chia toàn bộ tập kết quả thành bốn nhóm.
+
 ### `ROW_NUMBER` vs `RANK` vs `DENSE_RANK`
 
-Giả sử values: `100, 100, 90`.
+Giả sử các giá trị là `100, 100, 90`.
 
 ```text
 ROW_NUMBER: 1,2,3
@@ -538,11 +578,13 @@ RANK:       1,1,3
 DENSE_RANK: 1,1,2
 ```
 
-- Cần **đúng một row** theo thứ tự ⇒ thường `ROW_NUMBER()`.
+- Cần **đúng một dòng** theo thứ tự ⇒ thường dùng `ROW_NUMBER()`.
 - Cần đồng hạng và có khoảng trống ⇒ `RANK()`.
 - Cần đồng hạng không có khoảng trống ⇒ `DENSE_RANK()`.
 
 ## 7.2 `LAG` / `LEAD`
+
+**Bài toán:** trên mỗi dòng đơn hàng, hiển thị thêm giá trị của đơn ngay trước và ngay sau của cùng khách hàng. Nếu không có `LAG`/`LEAD`, bạn thường phải tự nối bảng với chính nó và đoạn lệnh sẽ phức tạp hơn.
 
 ```sql
 SELECT
@@ -557,9 +599,13 @@ FROM dbo.Orders;
 GO
 ```
 
-**Clue:** so sánh row hiện tại với row trước/sau ⇒ `LAG` / `LEAD`, không cần self-join.
+`LAG` nhìn về dòng trước; `LEAD` nhìn tới dòng sau theo thứ tự `OrderDate`. Dòng đầu tiên của mỗi khách hàng không có dòng trước nên `PrevAmount` là `NULL`; dòng cuối cùng không có dòng sau nên `NextAmount` là `NULL`.
 
-## 7.3 Running total và window frame
+> **Dấu hiệu nhận biết trong đề:** cần so sánh dòng hiện tại với dòng trước hoặc sau thì nghĩ đến `LAG`/`LEAD`, thay vì tự nối bảng với chính nó.
+
+## 7.3 Tổng lũy kế và khung cửa sổ
+
+**Bài toán:** báo cáo phải giữ từng đơn hàng nhưng đồng thời hiển thị tổng số tiền khách hàng đã chi từ đơn đầu tiên đến đơn hiện tại.
 
 ```sql
 SELECT
@@ -568,23 +614,30 @@ SELECT
     TotalAmount,
     SUM(TotalAmount) OVER
     (
+        -- Mỗi khách hàng có một tổng lũy kế riêng.
         PARTITION BY CustomerId
+        -- Xác định thứ tự cộng. OrderId giúp thứ tự ổn định
+        -- khi hai đơn có cùng ngày.
         ORDER BY OrderDate, OrderId
+        -- Bắt đầu từ dòng đầu tiên của khách hàng
+        -- và kết thúc tại dòng hiện tại.
         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS RunningTotal
 FROM dbo.Orders;
 GO
 ```
 
-Nhớ `ROWS BETWEEN ...` khi câu hỏi hỏi rõ frame vật lý của rows.
+Ví dụ một khách hàng có ba đơn lần lượt là 100, 50 và 200. Cột `RunningTotal` sẽ trả 100, 150 và 350. Dữ liệu vẫn còn ba dòng; đây là điểm khác biệt quan trọng với `GROUP BY`, vốn chỉ trả một tổng cho cả khách hàng.
+
+`ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` nghĩa là lấy mọi dòng từ đầu nhóm đến dòng hiện tại. Hãy viết rõ khung này khi yêu cầu nói đến tổng lũy kế theo từng dòng; nó cũng giúp tránh phụ thuộc vào khung mặc định của bộ máy cơ sở dữ liệu.
 
 Nguồn: [SELECT - OVER Clause](https://learn.microsoft.com/en-us/sql/t-sql/queries/select-over-clause-transact-sql?view=sql-server-ver17)
 
 ---
 
-# 8. JSON FUNCTIONS — PHẦN BẮT BUỘC TRONG BLUEPRINT
+# 8. CÁC HÀM JSON — PHẦN BẮT BUỘC TRONG ĐỀ
 
-## 8.1 `JSON_VALUE` — lấy scalar
+## 8.1 `JSON_VALUE` — lấy một giá trị đơn
 
 ```sql
 DECLARE @j NVARCHAR(MAX) =
@@ -600,7 +653,7 @@ GO
 
 ---
 
-## 8.2 `OPENJSON` — JSON → rows/columns
+## 8.2 `OPENJSON` — chuyển JSON thành dòng và cột
 
 ```sql
 DECLARE @orders NVARCHAR(MAX) = N'
@@ -619,11 +672,13 @@ WITH
 GO
 ```
 
-**Mental model:** `OPENJSON` shredding JSON thành relational rows.
+**Cách hình dung:** `OPENJSON` mở một mảng JSON và biến mỗi phần tử thành một dòng quan hệ. Mệnh đề `WITH` cho biết tên cột, kiểu dữ liệu và đường dẫn JSON cần đọc.
 
 ---
 
 ## 8.3 `JSON_OBJECT` và `JSON_ARRAY`
+
+Hai hàm sau làm chiều ngược lại với `OPENJSON`: chúng tạo JSON từ các giá trị quan hệ trong SQL.
 
 ```sql
 SELECT JSON_OBJECT
@@ -640,7 +695,7 @@ GO
 
 ---
 
-## 8.4 `JSON_ARRAYAGG` — nhiều rows → JSON array
+## 8.4 `JSON_ARRAYAGG` — gom nhiều dòng thành mảng JSON
 
 ```sql
 SELECT
@@ -657,7 +712,7 @@ GO
 
 ---
 
-## 8.5 `JSON_CONTAINS` — kiểm tra containment
+## 8.5 `JSON_CONTAINS` — kiểm tra một giá trị có nằm trong JSON hay không
 
 `JSON_CONTAINS` là tính năng SQL Server 2025 hiện còn **Preview**. Dùng để kiểm tra một JSON value có chứa candidate tại path được chỉ định hay không.
 
@@ -684,7 +739,7 @@ Nguồn: [JSON_CONTAINS](https://learn.microsoft.com/en-us/sql/t-sql/functions/j
 
 ---
 
-# 9. REGULAR EXPRESSIONS — SQL SERVER 2025
+# 9. BIỂU THỨC CHÍNH QUY — SQL SERVER 2025
 
 Các `REGEXP_*` là nhóm rất dễ được hỏi vì blueprint gọi tên từng hàm.
 
@@ -721,6 +776,8 @@ Nguồn tổng hợp: [Regular Expressions Functions](https://learn.microsoft.co
 
 ## 9.2 `REGEXP_LIKE`
 
+Ví dụ kiểm tra chuỗi có khớp một mẫu hay không. Kết quả phù hợp cho điều kiện `WHERE` hoặc `CHECK`.
+
 ```sql
 SELECT Email
 FROM dbo.Customers
@@ -732,7 +789,7 @@ WHERE REGEXP_LIKE
 GO
 ```
 
-### CHECK constraint chuẩn
+### Ràng buộc `CHECK` hoàn chỉnh
 
 ```sql
 DROP TABLE IF EXISTS dbo.Suppliers;
@@ -767,6 +824,8 @@ GO
 
 ## 9.3 `REGEXP_REPLACE`
 
+Ví dụ tìm các ký tự khớp mẫu rồi thay bằng nội dung mới, hữu ích khi chuẩn hóa dữ liệu đầu vào.
+
 ```sql
 SELECT REGEXP_REPLACE
 (
@@ -781,6 +840,8 @@ GO
 
 ## 9.4 `REGEXP_SUBSTR`
 
+Ví dụ lấy phần văn bản đầu tiên khớp mẫu; hàm trả một giá trị thay vì một tập dòng.
+
 ```sql
 SELECT REGEXP_SUBSTR
 (
@@ -794,6 +855,8 @@ GO
 
 ## 9.5 `REGEXP_INSTR`
 
+Ví dụ trả vị trí của chuỗi khớp mẫu. Dùng khi cần biết mẫu bắt đầu ở đâu thay vì lấy chính nội dung khớp.
+
 ```sql
 SELECT REGEXP_INSTR
 (
@@ -806,6 +869,8 @@ GO
 ---
 
 ## 9.6 `REGEXP_COUNT`
+
+Ví dụ đếm số lần mẫu xuất hiện trong chuỗi mà không cần tự viết vòng lặp.
 
 ```sql
 SELECT REGEXP_COUNT
@@ -831,7 +896,7 @@ FROM REGEXP_MATCHES
 GO
 ```
 
-Không cần học thuộc mọi tên output column để làm scenario; cần nhớ **hàm này trả về table** (`match_id`, vị trí, `match_value`, captures dạng JSON), khác `REGEXP_SUBSTR` chỉ trả về một occurrence scalar.
+Không cần học thuộc mọi tên cột đầu ra để làm bài; cần nhớ **hàm này trả về một bảng** (`match_id`, vị trí, `match_value`, các nhóm bắt được ở dạng JSON), khác `REGEXP_SUBSTR` chỉ trả về một lần khớp đơn lẻ.
 
 Nguồn: [REGEXP_MATCHES](https://learn.microsoft.com/en-us/sql/t-sql/functions/regexp-matches-transact-sql?view=sql-server-ver17)
 
@@ -855,7 +920,7 @@ Nguồn: [REGEXP_SPLIT_TO_TABLE](https://learn.microsoft.com/en-us/sql/t-sql/fun
 
 ---
 
-# 10. FUZZY STRING MATCHING — ĐỪNG NHẦM DISTANCE VÀ SIMILARITY
+# 10. SO KHỚP CHUỖI GẦN ĐÚNG — ĐỪNG NHẦM KHOẢNG CÁCH VÀ ĐỘ TƯƠNG ĐỒNG
 
 Nhóm này hỗ trợ matching tên/địa chỉ/text gần giống nhau.
 
@@ -913,7 +978,7 @@ Nguồn:
 
 ---
 
-# 11. GRAPH QUERY VỚI `MATCH`
+# 11. TRUY VẤN GRAPH VỚI `MATCH`
 
 Giả sử có:
 
@@ -932,17 +997,17 @@ WHERE MATCH(p-(l)->r);
 GO
 ```
 
-**Exam clue:** tìm relationship/path giữa graph nodes ⇒ `MATCH`, không phải JSON join hay recursive CTE theo mặc định.
+**Dấu hiệu nhận biết trong đề:** cần tìm quan hệ hoặc đường đi giữa các graph node thì nghĩ đến `MATCH`; không mặc định chọn JSON join hoặc recursive CTE.
 
 Nguồn: [MATCH (SQL Graph)](https://learn.microsoft.com/en-us/sql/t-sql/queries/match-sql-graph?view=sql-server-ver17)
 
 ---
 
-# 12. CORRELATED QUERIES — BLUEPRINT CÓ GỌI TÊN
+# 12. TRUY VẤN TƯƠNG QUAN — PHẠM VI THI CÓ GỌI TÊN
 
 Correlated subquery tham chiếu column từ outer query và được đánh giá logic theo từng outer row (optimizer có thể transform cách thực thi).
 
-## 12.1 `EXISTS` — kiểm tra có row hay không
+## 12.1 `EXISTS` — kiểm tra có dòng hay không
 
 ```sql
 SELECT
@@ -961,7 +1026,7 @@ GO
 
 **Clue:** “customers who have at least one…” ⇒ `EXISTS` rất tự nhiên.
 
-## 12.2 `NOT EXISTS` — anti-semi logic
+## 12.2 `NOT EXISTS` — kiểm tra không tồn tại
 
 ```sql
 SELECT
@@ -979,7 +1044,9 @@ GO
 
 **Clue:** “customers with no orders” ⇒ `NOT EXISTS`.
 
-## 12.3 Correlated scalar aggregate
+## 12.3 Phép tổng hợp tương quan trả về một giá trị
+
+Subquery sau chạy theo từng dòng của truy vấn ngoài để tính một giá trị tổng hợp riêng cho từng khách hàng.
 
 ```sql
 SELECT
@@ -996,13 +1063,13 @@ GO
 
 ### Bẫy `NOT IN` + NULL
 
-Trong scenario chống tồn tại, `NOT EXISTS` thường an toàn và rõ hơn `NOT IN` khi subquery có khả năng trả `NULL`.
+Trong bài toán kiểm tra “không tồn tại”, `NOT EXISTS` thường an toàn và rõ hơn `NOT IN` khi truy vấn con có khả năng trả `NULL`.
 
 Nguồn: [Subqueries](https://learn.microsoft.com/en-us/sql/relational-databases/performance/subqueries?view=sql-server-ver17)
 
 ---
 
-# 13. ERROR HANDLING + TRANSACTIONS
+# 13. XỬ LÝ LỖI VÀ GIAO DỊCH
 
 Đây là phần cần **viết được template chuẩn**.
 
@@ -1014,7 +1081,9 @@ Nguồn: [Subqueries](https://learn.microsoft.com/en-us/sql/relational-databases
 | `0` | không có active user transaction |
 | `-1` | transaction uncommittable; chỉ có thể rollback |
 
-## 13.2 Template production-friendly
+## 13.2 Mẫu xử lý an toàn cho môi trường thật
+
+Mẫu này bảo đảm transaction được commit khi mọi bước thành công và rollback khi có lỗi, sau đó `THROW` trả lỗi gốc cho bên gọi.
 
 ```sql
 CREATE OR ALTER PROCEDURE dbo.usp_TransferFunds
@@ -1057,7 +1126,7 @@ GO
 
 ### Vì sao dùng `THROW`?
 
-`THROW;` trong `CATCH` rethrow lỗi hiện tại và giữ thông tin lỗi phù hợp. Với code mới, đây là lựa chọn quan trọng cần nhận diện.
+`THROW;` trong `CATCH` ném lại lỗi hiện tại và giữ thông tin lỗi phù hợp. Với mã mới, đây là lựa chọn quan trọng cần nhận diện.
 
 ### Vì sao `XACT_STATE() <> 0`?
 
@@ -1075,9 +1144,9 @@ Nguồn:
 
 ---
 
-# 14. LAB TỔNG HỢP — TOP-N PER GROUP + JSON + PROCEDURE + TRANSACTION
+# 14. BÀI THỰC HÀNH TỔNG HỢP — TOP-N MỖI NHÓM, JSON, PROCEDURE VÀ TRANSACTION
 
-Mục tiêu: nối nhiều kỹ năng vào cùng một scenario.
+Mục tiêu: nối nhiều kỹ năng vào cùng một tình huống hoàn chỉnh.
 
 ```sql
 -- 1. Latest order per customer bằng ROW_NUMBER.
@@ -1134,9 +1203,9 @@ GO
 
 ---
 
-# 15. EXAM DECISION TABLE — NHÌN KEYWORD, CHỌN KỸ THUẬT
+# 15. BẢNG CHỌN GIẢI PHÁP — NHÌN DẤU HIỆU, CHỌN KỸ THUẬT
 
-| Scenario | Nghĩ tới |
+| Dấu hiệu trong tình huống | Nghĩ tới |
 |---|---|
 | Reusable SELECT abstraction | View |
 | Materialized relational summary | Indexed View |
@@ -1148,7 +1217,7 @@ GO
 | Hierarchy recursion | Recursive CTE |
 | Top N per group | `ROW_NUMBER` / ranking window |
 | Previous/next row | `LAG` / `LEAD` |
-| Running total | aggregate window + frame |
+| Tổng lũy kế | Hàm tổng hợp dạng cửa sổ + khung cửa sổ |
 | JSON scalar | `JSON_VALUE` |
 | JSON → rows | `OPENJSON` |
 | Rows → JSON array | `JSON_ARRAYAGG` |
@@ -1168,9 +1237,9 @@ GO
 
 ---
 
-# 16. MOCK QUESTIONS — TỰ KIỂM TRA
+# 16. CÂU HỎI TỰ KIỂM TRA
 
-## Q1 — Latest row per group
+## Q1 — Dòng mới nhất trong mỗi nhóm
 
 Bạn cần trả đúng **một order mới nhất** cho mỗi customer, kể cả khi hai orders có cùng `OrderDate`.
 
@@ -1178,7 +1247,7 @@ Bạn cần trả đúng **một order mới nhất** cho mỗi customer, kể c
 
 ---
 
-## Q2 — Ranking with ties
+## Q2 — Xếp hạng khi có giá trị bằng nhau
 
 Values: 100, 100, 90. Muốn ranks: 1, 1, 2.
 
@@ -1186,7 +1255,7 @@ Values: 100, 100, 90. Muốn ranks: 1, 1, 2.
 
 ---
 
-## Q3 — JSON to rows
+## Q3 — Chuyển JSON thành các dòng
 
 API gửi một JSON array gồm 1,000 order objects. Cần chuyển thành rowset để validate/insert.
 
@@ -1194,7 +1263,7 @@ API gửi một JSON array gồm 1,000 order objects. Cần chuyển thành rows
 
 ---
 
-## Q4 — JSON array aggregation
+## Q4 — Gom dữ liệu thành mảng JSON
 
 Cần trả danh sách `OrderId` của mỗi customer thành JSON array.
 
@@ -1202,7 +1271,7 @@ Cần trả danh sách `OrderId` của mỗi customer thành JSON array.
 
 ---
 
-## Q5 — Regex check
+## Q5 — Kiểm tra bằng biểu thức chính quy
 
 `TaxCode` phải đúng 10 digits.
 
@@ -1210,19 +1279,19 @@ Cần trả danh sách `OrderId` của mỗi customer thành JSON array.
 
 ---
 
-## Q6 — Multiple regex results
+## Q6 — Lấy nhiều kết quả biểu thức chính quy
 
-Một chuỗi có nhiều ticket codes và bạn cần mỗi code thành một row.
+Một chuỗi có nhiều mã phiếu và bạn cần tách mỗi mã thành một dòng.
 
 **Đáp án:** `REGEXP_MATCHES`.
 
 ---
 
-## Q7 — Fuzzy trap
+## Q7 — Bẫy so khớp gần đúng
 
 Cần thang điểm **0–100**, giá trị cao hơn nghĩa là giống hơn.
 
-**Đáp án:** `EDIT_DISTANCE_SIMILARITY` (hoặc Jaro-Winkler similarity nếu scenario chỉ hỏi ngoài blueprint); không chọn distance.
+**Đáp án:** `EDIT_DISTANCE_SIMILARITY` (hoặc độ tương đồng Jaro-Winkler nếu câu hỏi mở rộng ngoài phạm vi chính); không chọn hàm trả về khoảng cách.
 
 ---
 
@@ -1234,7 +1303,7 @@ Một `UPDATE` sửa 500 rows. Trigger audit chỉ dùng scalar variables từ `
 
 ---
 
-## Q9 — Indexed View
+## Q9 — View có chỉ mục
 
 View đã có `SCHEMABINDING`, nhưng chưa materialized.
 
@@ -1250,7 +1319,7 @@ Muốn query trực tiếp sử dụng indexed representation.
 
 ---
 
-## Q11 — Correlated anti-query
+## Q11 — Truy vấn tương quan kiểm tra không tồn tại
 
 Tìm customers chưa từng có order và subquery có khả năng chứa NULL.
 
@@ -1258,7 +1327,7 @@ Tìm customers chưa từng có order và subquery có khả năng chứa NULL.
 
 ---
 
-## Q12 — Error handling
+## Q12 — Xử lý lỗi
 
 Trong `CATCH`, cần biết transaction có ở trạng thái uncommittable hay không.
 
@@ -1266,7 +1335,7 @@ Trong `CATCH`, cần biết transaction có ở trạng thái uncommittable hay 
 
 ---
 
-# 17. CHECKLIST “EXAM READY”
+# 17. DANH SÁCH TỰ KIỂM TRA
 
 Bạn chỉ nên đánh dấu hoàn tất file này khi tự làm được mà không nhìn đáp án:
 
@@ -1278,7 +1347,7 @@ Bạn chỉ nên đánh dấu hoàn tất file này khi tự làm được mà k
 - [ ] Viết AFTER trigger xử lý multi-row bằng `inserted`/`deleted`.
 - [ ] Giải recursive CTE.
 - [ ] Phân biệt `ROW_NUMBER`, `RANK`, `DENSE_RANK`.
-- [ ] Viết `LAG`, `LEAD`, running total.
+- [ ] Viết được `LAG`, `LEAD` và tổng lũy kế.
 - [ ] Dùng `JSON_VALUE`, `OPENJSON`, `JSON_OBJECT`, `JSON_ARRAY`, `JSON_ARRAYAGG`, nhận diện `JSON_CONTAINS`.
 - [ ] Nhớ mục đích cả 7 hàm `REGEXP_*` trong blueprint.
 - [ ] Nhớ `EDIT_DISTANCE_SIMILARITY` là **0–100**, không phải 0–1.
@@ -1288,13 +1357,13 @@ Bạn chỉ nên đánh dấu hoàn tất file này khi tự làm được mà k
 
 ---
 
-# 18. LINK THAM KHẢO CHÍNH THỨC
+# 18. TÀI LIỆU THAM KHẢO CHÍNH THỨC
 
 ## Blueprint
 
 - [DP-800 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-800)
 
-## Programmability
+## Lập trình trong cơ sở dữ liệu
 
 - [CREATE VIEW](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-view-transact-sql?view=sql-server-ver17)
 - [Create Indexed Views](https://learn.microsoft.com/en-us/sql/relational-databases/views/create-indexed-views?view=sql-server-ver17)
@@ -1302,7 +1371,7 @@ Bạn chỉ nên đánh dấu hoàn tất file này khi tự làm được mà k
 - [CREATE PROCEDURE](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-procedure-transact-sql?view=sql-server-ver17)
 - [DML Triggers](https://learn.microsoft.com/en-us/sql/relational-databases/triggers/dml-triggers?view=sql-server-ver17)
 
-## Advanced T-SQL
+## T-SQL nâng cao
 
 - [WITH common_table_expression](https://learn.microsoft.com/en-us/sql/t-sql/queries/with-common-table-expression-transact-sql?view=sql-server-ver17)
 - [OVER clause](https://learn.microsoft.com/en-us/sql/t-sql/queries/select-over-clause-transact-sql?view=sql-server-ver17)

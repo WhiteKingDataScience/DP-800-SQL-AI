@@ -1,30 +1,52 @@
-# DP-800 Domain 3: Design & Implement Retrieval-Augmented Generation (RAG)
+# DP-800 Miền 3 — Xây dựng quy trình RAG với dữ liệu SQL
 
-> **Miền 3:** Implement AI Capabilities in Database Solutions (25–30%)  
-> **Chủ đề:** Design and Implement Retrieval-Augmented Generation (RAG)  
+> **Miền 3:** Triển khai khả năng AI trong giải pháp cơ sở dữ liệu (25–30%)  
+> **Chủ đề:** Tìm dữ liệu liên quan, tạo JSON/prompt, gọi LLM và xử lý câu trả lời  
 > **Blueprint dùng để cập nhật:** DP-800 Skills measured as of **March 12, 2026**  
-> **Ngày rà soát:** 09/08/2026  
-> **Trọng tâm thi:** RAG use cases, retrieval context, JSON, prompt augmentation, `sp_invoke_external_rest_endpoint`, Managed Identity, gửi dữ liệu tới LLM và extract response.
+> **Cập nhật cách trình bày:** 12/08/2026  
+> **Trọng tâm thi:** Nhận diện bài toán RAG, chuẩn bị ngữ cảnh, bảo vệ dữ liệu trước khi gọi model và xử lý response an toàn.
+
+## RAG giải quyết vấn đề gì trong đời thực?
+
+Một mô hình ngôn ngữ không tự biết đơn hàng vừa phát sinh sáng nay, chính sách nội bộ chỉ lưu trong công ty hoặc những tài liệu mà người dùng hiện tại được phép xem. Nếu chỉ hỏi model bằng kiến thức đã huấn luyện, câu trả lời có thể cũ hoặc bị bịa.
+
+RAG thêm một bước **tìm dữ liệu thật trước khi hỏi model**:
+
+```text
+Người dùng hỏi
+      ↓
+SQL kiểm tra quyền và tìm các đoạn dữ liệu liên quan
+      ↓
+Chuyển kết quả thành JSON có cấu trúc
+      ↓
+Ghép hướng dẫn + dữ liệu tìm được + câu hỏi thành prompt
+      ↓
+Gọi mô hình ngôn ngữ
+      ↓
+Kiểm tra response, trích xuất câu trả lời và nguồn
+```
+
+Điểm quan trọng nhất: **RAG không phải một câu lệnh duy nhất**. Nó là một chuỗi bước; thứ tự bảo mật, cấu trúc JSON, quyền gọi endpoint và cách xử lý lỗi đều có thể trở thành câu hỏi thi.
 
 ---
 
-# 0. Blueprint chính thức: RAG cần học đến đâu?
+# 0. Phạm vi chính thức: RAG cần học đến đâu?
 
 DP-800 yêu cầu bạn có thể:
 
-1. **Identify use cases for RAG**.
-2. Tạo prompt bằng `sp_invoke_external_rest_endpoint` workflow.
-3. Chuyển structured SQL data thành **JSON** để model xử lý.
-4. Gửi retrieval results tới language model.
-5. Extract model response.
+1. Nhận diện trường hợp nên dùng RAG.
+2. Tạo prompt và gọi endpoint bằng `sp_invoke_external_rest_endpoint`.
+3. Chuyển dữ liệu SQL có cấu trúc thành **JSON** để model xử lý.
+4. Gửi kết quả truy xuất tới mô hình ngôn ngữ.
+5. Trích xuất và kiểm tra response của model.
 
 Microsoft Learn module hiện hành cũng đi đúng luồng:
 
-**Identify RAG scenario → prepare retrieval context → augment prompt → generate/process response.**
+**Nhận diện bài toán RAG → chuẩn bị dữ liệu liên quan → bổ sung dữ liệu vào prompt → tạo và xử lý câu trả lời.**
 
-> **Tư duy thi:** Bạn không cần biến database thành một AI orchestration platform phức tạp. Bạn cần hiểu rõ data flow, security boundary, JSON shape, external REST call và cách xử lý response.
+> **Tư duy thi:** Bạn không cần biến database thành nền tảng điều phối AI phức tạp. Bạn cần hiểu rõ luồng dữ liệu, ranh giới bảo mật, cấu trúc JSON, lời gọi REST và cách xử lý response.
 
-### Ma trận platform/feature để không học lẫn (09/08/2026)
+### Ma trận nền tảng và tính năng để không học lẫn (09/08/2026)
 
 | Khả năng | SQL Server 2025 | Azure SQL Database | Azure SQL Managed Instance | SQL database in Fabric | Fabric Warehouse / SQL analytics endpoint |
 |---|---|---|---|---|---|
@@ -37,9 +59,9 @@ Trang `sp_invoke_external_rest_endpoint` hiện không gắn nhãn Preview cho p
 
 ---
 
-# 📘 PHẦN 1 — RAG LÀ GÌ?
+# PHẦN 1 — RAG LÀ GÌ?
 
-## 1. Retrieval-Augmented Generation
+## 1. RAG — sinh câu trả lời có bổ sung dữ liệu được truy xuất
 
 RAG = **Retrieval + Augmentation + Generation**.
 
@@ -78,7 +100,7 @@ RAG giúp:
 - giữ structured permission/filtering tại SQL retrieval layer,
 - cung cấp evidence/context cho model.
 
-### Nhưng RAG KHÔNG đảm bảo hết hallucination
+### Nhưng RAG không loại bỏ hoàn toàn hiện tượng AI bịa thông tin
 
 Tài liệu cũ nói RAG “loại bỏ hallucination” là quá mạnh.
 
@@ -97,11 +119,11 @@ Bạn vẫn cần:
 
 ---
 
-# 📘 PHẦN 2 — KHI NÀO DÙNG RAG?
+# PHẦN 2 — KHI NÀO DÙNG RAG?
 
-## 3. Decision matrix
+## 3. Bảng chọn giải pháp
 
-| Requirement | Giải pháp phù hợp |
+| Yêu cầu | Giải pháp phù hợp |
 |---|---|
 | Exact report / total / aggregation | SQL query, không cần LLM |
 | Keyword search | Full-Text Search |
@@ -124,13 +146,15 @@ Bạn vẫn cần:
 - “OrderId 123 có status gì?” → SQL lookup.
 - “SKU ABC còn bao nhiêu?” → SQL query.
 
-> **Exam trap:** Đừng gửi mọi câu hỏi qua LLM nếu SQL đã trả lời deterministic và chính xác hơn.
+> **Bẫy thường gặp trong đề:** Đừng gửi mọi câu hỏi qua LLM nếu SQL có thể trả lời theo quy tắc xác định và chính xác hơn.
 
 ---
 
-# 📘 PHẦN 3 — RAG ARCHITECTURE TRONG SQL
+# PHẦN 3 — KIẾN TRÚC RAG TRONG SQL
 
-## 4. End-to-end mental model 8 bước
+## 4. Quy trình hoàn chỉnh gồm 8 bước
+
+Sơ đồ sau là xương sống của chương. Hãy đọc theo thứ tự từ trên xuống và nhớ rằng lọc quyền phải xảy ra trước khi dữ liệu được gửi ra endpoint AI.
 
 ```text
 1. User question
@@ -143,7 +167,7 @@ Bạn vẫn cần:
 8. Parse response + return answer / citations / metadata
 ```
 
-### Security phải xảy ra TRƯỚC khi gửi context ra ngoài
+### Phải lọc quyền truy cập trước khi gửi ngữ cảnh ra ngoài
 
 Nếu user không được xem một row, row đó **không được đi vào prompt**.
 
@@ -151,9 +175,9 @@ RLS/tenant filter/ACL nên nằm tại retrieval stage.
 
 ---
 
-# 📘 PHẦN 4 — PREPARE RETRIEVAL CONTEXT
+# PHẦN 4 — CHUẨN BỊ DỮ LIỆU LIÊN QUAN
 
-## 5. Retrieval quality quyết định RAG quality
+## 5. Chất lượng truy xuất quyết định chất lượng RAG
 
 Nếu retrieval trả chunk không liên quan thì LLM cũng bị “ground” vào context xấu.
 
@@ -167,7 +191,7 @@ Một RAG pipeline tốt thường:
 
 ---
 
-## 6. Ví dụ retrieval bằng exact vector
+## 6. Ví dụ truy xuất bằng tìm kiếm vector chính xác
 
 Giả sử đã có:
 
@@ -199,7 +223,7 @@ Nếu corpus lớn và platform/index hỗ trợ, có thể dùng `VECTOR_SEARCH
 
 ---
 
-# 📘 PHẦN 5 — STRUCTURED DATA → JSON
+# PHẦN 5 — CHUYỂN DỮ LIỆU CÓ CẤU TRÚC THÀNH JSON
 
 ## 7. Tại sao JSON quan trọng trong DP-800 RAG?
 
@@ -218,7 +242,7 @@ Bạn cần biết ít nhất:
 
 ---
 
-## 8. `FOR JSON PATH` — rất phù hợp serialize retrieval rows
+## 8. `FOR JSON PATH` — phù hợp để đóng gói các dòng truy xuất thành JSON
 
 ```sql
 DECLARE @ContextJson nvarchar(max);
@@ -298,7 +322,7 @@ GO
 
 ---
 
-# 📘 PHẦN 6 — `sp_invoke_external_rest_endpoint`
+# PHẦN 6 — GỌI REST API BẰNG `sp_invoke_external_rest_endpoint`
 
 ## 10. Stored procedure này làm gì?
 
@@ -311,7 +335,9 @@ Applies to current Microsoft docs:
 - Azure SQL Managed Instance
 - SQL database in Microsoft Fabric
 
-### Core syntax
+### Cú pháp cốt lõi
+
+Mẫu gọi dưới đây cho thấy các thành phần chính: URL, HTTP method, header/payload, credential, timeout, số lần thử lại và biến nhận response.
 
 ```sql
 DECLARE @Response nvarchar(max);
@@ -331,7 +357,7 @@ SELECT @ReturnCode AS ReturnCode,
 GO
 ```
 
-### Parameters cần hiểu
+### Các tham số cần hiểu
 
 | Parameter | Ý nghĩa |
 |---|---|
@@ -342,9 +368,9 @@ GO
 | `@timeout` | 1–230 seconds |
 | `@credential` | Database Scoped Credential |
 | `@response OUTPUT` | response wrapper |
-| `@retry_count` | 0–10 retries theo current docs |
+| `@retry_count` | Thử lại 0–10 lần theo tài liệu hiện hành |
 
-### Limits và hành vi vận hành phải biết
+### Các giới hạn và hành vi vận hành phải biết
 
 | Giới hạn/hành vi | Giá trị hiện hành | Ý nghĩa thiết kế |
 |---|---:|---|
@@ -359,10 +385,10 @@ Chỉ HTTPS/TLS được hỗ trợ. Procedure báo wait type `HTTP_EXTERNAL_CON
 
 ---
 
-## 11. Return code — hay bị bỏ quên
+## 11. Mã trả về — phần hay bị bỏ quên
 
 - Return `0` → HTTP response là **2xx success**.
-- Non-2xx → return HTTP status code.
+- Không phải 2xx → trả về mã trạng thái HTTP.
 - Không thực hiện được HTTPS call → exception.
 
 ```sql
@@ -383,9 +409,9 @@ END;
 
 ---
 
-# 📘 PHẦN 7 — PERMISSIONS & ENABLEMENT
+# PHẦN 7 — QUYỀN VÀ CÁCH BẬT TÍNH NĂNG
 
-## 12. Permission bắt buộc
+## 12. Quyền bắt buộc
 
 Principal gọi stored procedure cần database permission:
 
@@ -411,9 +437,9 @@ Nếu principal trực tiếp gọi `AI_GENERATE_EMBEDDINGS`, nó còn cần `EX
 
 ---
 
-## 13. Enable feature theo platform
+## 13. Bật tính năng theo từng nền tảng
 
-### SQL Server 2025 / Azure SQL Managed Instance (current docs)
+### SQL Server 2025 / Azure SQL Managed Instance theo tài liệu hiện hành
 
 SQL Server 2025 và Managed Instance dùng SQL Server 2025 hoặc Always-up-to-date update policy bị disabled mặc định; cần bật bằng principal có `ALTER SETTINGS`:
 
@@ -425,15 +451,15 @@ GO
 
 ### Azure SQL Database / SQL database in Fabric
 
-Current docs: enabled by default.
+Theo tài liệu hiện hành, tính năng được bật mặc định.
 
-> **Exam trap:** Không được trả lời “luôn phải chạy `sp_configure` trên mọi platform”. Platform matters.
+> **Bẫy thường gặp trong đề:** Không được trả lời “luôn phải chạy `sp_configure` trên mọi nền tảng”. Cách bật tính năng phụ thuộc nền tảng.
 
 ---
 
-# 📘 PHẦN 8 — MANAGED IDENTITY
+# PHẦN 8 — MANAGED IDENTITY
 
-## 14. Passwordless call tới Azure OpenAI
+## 14. Gọi Azure OpenAI không dùng mật khẩu
 
 Ví dụ từ pattern Microsoft hiện hành:
 
@@ -465,7 +491,7 @@ GO
 
 Managed Identity phải được cấp RBAC phù hợp trên target resource. Với Azure OpenAI inference, Microsoft docs hiện minh họa role **Cognitive Services OpenAI User** trong `sp_invoke_external_rest_endpoint` example.
 
-### Credential name matching
+### Quy tắc khớp tên thông tin xác thực
 
 Current rules quan trọng:
 
@@ -474,15 +500,15 @@ Current rules quan trọng:
 - Credential URL không chứa query string.
 - Credential path phải là prefix/generic-enough path phù hợp với request URL.
 
-> **Exam trap:** Credential không chỉ là “một tên bất kỳ”; URL-prefix matching có quy tắc.
+> **Bẫy thường gặp trong đề:** Credential không chỉ là “một tên bất kỳ”; việc khớp tiền tố URL có quy tắc cụ thể.
 
 ---
 
-# 📘 PHẦN 9 — ALLOWED ENDPOINTS & NETWORK SAFETY
+# PHẦN 9 — ENDPOINT ĐƯỢC PHÉP VÀ AN TOÀN MẠNG
 
-## 15. Azure SQL / MI endpoint allowlist
+## 15. Danh sách endpoint được phép của Azure SQL và Managed Instance
 
-Azure SQL Database và Azure SQL Managed Instance có allowlist cho external REST domains. Current docs bao gồm các Azure services như:
+Azure SQL Database và Azure SQL Managed Instance có danh sách domain REST được phép gọi. Tài liệu hiện hành bao gồm các dịch vụ Azure như:
 
 - Azure OpenAI: `*.openai.azure.com`
 - Azure AI Services: `*.cognitiveservices.azure.com`
@@ -494,11 +520,11 @@ Azure SQL Database và Azure SQL Managed Instance có allowlist cho external RES
 - Storage services
 - Microsoft Graph, Power BI, v.v.
 
-### Nếu external public API không thuộc allowlist?
+### Nếu API công cộng bên ngoài không thuộc danh sách được phép thì sao?
 
-Một pattern là đặt API sau **Azure API Management** nếu scenario cho phép.
+Một mẫu kiến trúc là đặt API phía sau **Azure API Management** nếu tình huống cho phép.
 
-### Security principles
+### Nguyên tắc bảo mật
 
 - HTTPS/TLS.
 - Least privilege.
@@ -510,9 +536,9 @@ Một pattern là đặt API sau **Azure API Management** nếu scenario cho ph�
 
 ---
 
-# 📘 PHẦN 10 — RESPONSE WRAPPER
+# PHẦN 10 — CẤU TRÚC PHẢN HỒI TRẢ VỀ
 
-## 16. Response không chỉ là raw model JSON
+## 16. Phản hồi không chỉ là JSON gốc của model
 
 `@response` có wrapper dạng concept:
 
@@ -553,7 +579,9 @@ thì trong SQL wrapper, path có thể là (chỉ an toàn khi biết answer kh�
 JSON_VALUE(@Response, '$.result.choices[0].message.content')
 ```
 
-### HTTP code
+### Mã trạng thái HTTP
+
+Đoạn lệnh sau đọc trạng thái HTTP trong lớp bọc phản hồi để phân biệt yêu cầu thành công với lỗi xác thực, giới hạn tốc độ hoặc lỗi máy chủ.
 
 ```sql
 SELECT JSON_VALUE
@@ -615,27 +643,27 @@ SELECT @Answer AS Answer;
 GO
 ```
 
-> **Production hardening:** `CATCH` trong lab trả `ERROR_MESSAGE()` để dễ học. Production không nên đưa raw endpoint/configuration error cho end user; hãy log nội bộ cùng correlation ID, trả thông báo chung và không log prompt/response chứa PII nếu policy không cho phép.
+> **Tăng cường an toàn cho môi trường thật:** `CATCH` trong bài thực hành trả `ERROR_MESSAGE()` để dễ học. Ở môi trường thật, không nên đưa lỗi endpoint/cấu hình thô cho người dùng cuối; hãy ghi nhật ký nội bộ cùng mã tương quan, trả thông báo chung và không ghi prompt/phản hồi chứa dữ liệu định danh cá nhân nếu chính sách không cho phép.
 
 ---
 
-# 📘 PHẦN 11 — PROMPT AUGMENTATION
+# PHẦN 11 — BỔ SUNG NGỮ CẢNH VÀO PROMPT
 
 ## 18. Một prompt RAG nên có gì?
 
-### A. System instruction
+### A. Chỉ dẫn cấp hệ thống
 Nêu role, scope và behavior.
 
-### B. Grounding rule
+### B. Quy tắc chỉ trả lời dựa trên dữ liệu được cung cấp
 “Chỉ trả lời dựa trên context; nếu context thiếu, nói không đủ thông tin.”
 
-### C. Retrieved context
+### C. Ngữ cảnh đã truy xuất
 Các chunk đã được security-filtered.
 
-### D. User question
+### D. Câu hỏi của người dùng
 Giữ tách biệt rõ với context.
 
-### E. Output requirement
+### E. Yêu cầu về đầu ra
 Ví dụ JSON/short answer/source IDs nếu app cần.
 
 Nếu yêu cầu structured output, mô tả contract rõ ràng và **validate trước khi sử dụng**:
@@ -660,11 +688,11 @@ WITH
 GO
 ```
 
-JSON hợp lệ chưa chắc đúng business schema. Production code còn phải kiểm tra field bắt buộc, type/range, source IDs có thực sự thuộc retrieved set hay không và policy trước khi tự động hành động.
+JSON hợp lệ chưa chắc đúng lược đồ nghiệp vụ. Mã chạy ở môi trường thật còn phải kiểm tra trường bắt buộc, kiểu/phạm vi giá trị, mã nguồn trích dẫn có thực sự thuộc tập đã truy xuất hay không và chính sách trước khi tự động hành động.
 
 ---
 
-## 19. Chống prompt injection trong retrieved content
+## 19. Chống chỉ dẫn độc hại trong nội dung được truy xuất
 
 Retrieved documents có thể chứa text kiểu:
 
@@ -686,11 +714,11 @@ Practical defenses:
 
 ---
 
-# 📘 PHẦN 12 — END-TO-END RAG STORED PROCEDURE
+# PHẦN 12 — STORED PROCEDURE RAG HOÀN CHỈNH
 
-## 20. Lab hoàn chỉnh
+## 20. Bài thực hành hoàn chỉnh
 
-> Lab giả định bạn đã có `dbo.DocumentChunks` và `DP800_EmbeddingModel` từ file 08.  
+> Bài thực hành giả định bạn đã có `dbo.DocumentChunks` và `DP800_EmbeddingModel` từ file 08.  
 > `<chat-endpoint>` là placeholder: hãy dùng endpoint/API version hiện đang được resource của bạn hỗ trợ. Cloud API versions thay đổi nhanh hơn exam blueprint.
 
 ```sql
@@ -863,9 +891,9 @@ GO
 
 ---
 
-# 📘 PHẦN 13 — HYBRID RAG
+# PHẦN 13 — RAG DÙNG TÌM KIẾM KẾT HỢP
 
-## 21. Khi retrieval nên là Hybrid
+## 21. Khi nào nên dùng truy xuất kết hợp?
 
 Nếu knowledge base chứa:
 
@@ -891,9 +919,9 @@ LLM
 
 ---
 
-# 📘 PHẦN 14 — RLS / TENANT SECURITY TRONG RAG
+# PHẦN 14 — RLS VÀ BẢO MẬT KHÁCH HÀNG TRONG RAG
 
-## 22. Multi-tenant example
+## 22. Ví dụ hệ thống phục vụ nhiều khách hàng dùng chung
 
 Sai:
 
@@ -939,9 +967,9 @@ Nếu dùng `EXECUTE AS`, ownership chaining hoặc module signing, phải test 
 
 ---
 
-# 📘 PHẦN 15 — BATCHING & EXTERNAL CALL PERFORMANCE
+# PHẦN 15 — GỌI THEO LÔ VÀ HIỆU NĂNG KHI GỌI RA NGOÀI
 
-## 23. Đừng gọi HTTP một lần cho mỗi row nếu có thể batch
+## 23. Không gọi HTTP một lần cho mỗi dòng nếu có thể xử lý theo lô
 
 Microsoft docs khuyến nghị khi gửi nhiều rows tới REST endpoint, nên batch thành một JSON document bằng `FOR JSON` để giảm HTTPS overhead.
 
@@ -962,7 +990,7 @@ Trong RAG query-time, thường chỉ gửi Top-K context chứ không gửi c�
 
 ---
 
-# 📘 PHẦN 16 — ERROR HANDLING & RETRIES
+# PHẦN 16 — XỬ LÝ LỖI VÀ THỬ LẠI
 
 ## 24. `@retry_count`
 
@@ -974,12 +1002,12 @@ Current `sp_invoke_external_rest_endpoint` hỗ trợ:
 - Dùng `Retry-After` nếu có; nếu không, áp dụng exponential backoff cho các status phù hợp.
 - `@timeout` là **cumulative timeout** của toàn procedure khi retry được bật.
 
-### Khi retry hợp lý?
+### Khi nào nên thử lại?
 
 - Transient network/service errors.
 - Throttling mà service trả retry guidance.
 
-### Khi retry không giúp?
+### Khi nào thử lại cũng không giúp?
 
 - 401/403 do permission sai.
 - URL sai.
@@ -988,9 +1016,9 @@ Current `sp_invoke_external_rest_endpoint` hỗ trợ:
 
 > **Exam mindset:** Retry không chữa configuration/security bug.
 
-### Troubleshooting matrix
+### Bảng chẩn đoán
 
-| Symptom / code | Khả năng cao | Xử lý đúng |
+| Triệu chứng hoặc mã lỗi | Khả năng cao | Xử lý đúng |
 |---|---|---|
 | 400 | Payload/schema/header/API contract sai | `ISJSON`, xem endpoint contract, inspect wrapper response an toàn |
 | 401/403 | Authentication/RBAC sai, thiếu `REFERENCES` credential | Sửa credential/identity/role/permission; retry không giúp |
@@ -1004,9 +1032,9 @@ Current `sp_invoke_external_rest_endpoint` hỗ trợ:
 
 ---
 
-# 📘 PHẦN 17 — OBSERVABILITY
+# PHẦN 17 — GHI NHẬT KÝ VÀ QUAN SÁT
 
-## 25. Bạn nên log gì?
+## 25. Bạn nên ghi lại những gì?
 
 Không log secret/raw PII tùy tiện. Nhưng nên có:
 
@@ -1024,9 +1052,9 @@ Theo dõi cả retrieval quality và generation quality.
 
 ---
 
-# 📘 PHẦN 18 — RAG vs `AI_GENERATE_RESPONSE`
+# PHẦN 18 — SO SÁNH RAG VỚI `AI_GENERATE_RESPONSE`
 
-## 26. Đừng nhầm phạm vi feature
+## 26. Đừng nhầm phạm vi tính năng
 
 `AI_GENERATE_RESPONSE(prompt [, data])` hiện là **Preview** và chỉ áp dụng cho **Warehouse in Microsoft Fabric** cùng **SQL analytics endpoint**. Nó không áp dụng cho SQL Server 2025, Azure SQL Database, Azure SQL Managed Instance hay SQL database in Fabric. Trên những Database Engine surfaces đó, flow RAG của blueprint là JSON + `sp_invoke_external_rest_endpoint`.
 
@@ -1041,57 +1069,57 @@ Blueprint hiện hành gọi đích danh:
 
 ---
 
-# 🧠 PHẦN 19 — EXAM TRAPS
+# PHẦN 19 — BẪY THƯỜNG GẶP TRONG ĐỀ
 
 ## 27. Các bẫy quan trọng
 
-### Bẫy 1 — RAG loại bỏ hallucination 100%
+### Bẫy 1 — RAG loại bỏ hoàn toàn việc AI bịa thông tin
 Sai. RAG giúp grounding/giảm hallucination, không guarantee correctness.
 
-### Bẫy 2 — SQL deterministic report nên luôn qua LLM
+### Bẫy 2 — báo cáo SQL cho kết quả xác định luôn phải đi qua LLM
 Sai. SQL trả aggregation/exact lookup chính xác hơn.
 
-### Bẫy 3 — Filter permission sau khi LLM đã nhận context
+### Bẫy 3 — lọc quyền sau khi LLM đã nhận ngữ cảnh
 Sai. Authorization phải trước outbound prompt.
 
-### Bẫy 4 — `sp_invoke_external_rest_endpoint` chỉ cần EXECUTE permission bình thường
+### Bẫy 4 — `sp_invoke_external_rest_endpoint` chỉ cần quyền `EXECUTE` thông thường
 Thiếu. Direct caller cần **`EXECUTE ANY EXTERNAL ENDPOINT`**; nếu truyền `@credential`, còn cần `REFERENCES` trên database scoped credential cụ thể.
 
 ### Bẫy 5 — `sp_configure` luôn cần ở Azure SQL Database
-Sai. Current docs nói Azure SQL Database / SQL database in Fabric enabled by default; SQL Server 2025/MI cần enable theo prerequisites.
+Sai. Tài liệu hiện hành nói Azure SQL Database và SQL database in Fabric bật mặc định; SQL Server 2025/MI cần bật theo điều kiện của nền tảng.
 
-### Bẫy 6 — `@response` là raw model JSON
+### Bẫy 6 — `@response` là JSON thô trực tiếp từ model
 Không hoàn toàn. SQL wraps metadata dưới `response` và remote payload dưới `result`.
 
-### Bẫy 7 — `JSON_QUERY` để lấy scalar answer
+### Bẫy 7 — dùng `JSON_QUERY` để lấy một câu trả lời dạng chuỗi
 Sai. Scalar string → `JSON_VALUE`; array/object → `JSON_QUERY`.
 
-### Bẫy 8 — Hardcode API key
+### Bẫy 8 — ghi thẳng API key vào mã nguồn
 Không phù hợp khi đề yêu cầu passwordless/enterprise security. Managed Identity + DB scoped credential là pattern ưu tiên.
 
-### Bẫy 9 — Gửi tất cả rows cho LLM
+### Bẫy 9 — gửi tất cả các dòng cho LLM
 Sai về token/cost/security. Retrieve Top-K relevant context.
 
-### Bẫy 10 — Remote instructions trong document được tin như system prompt
+### Bẫy 10 — tin chỉ dẫn trong tài liệu từ xa như chỉ dẫn cấp hệ thống
 Nguy hiểm. Context là untrusted data.
 
 ### Bẫy 11 — `JSON_VALUE` luôn lấy được câu trả lời dài
 Sai. Không có `RETURNING`, nó trả `nvarchar(4000)`; với `@Response nvarchar(max)`, dùng `OPENJSON ... WITH (content nvarchar(max) ...)` để tránh mất answer dài.
 
-### Bẫy 12 — Timeout 60 giây và 2 retries nghĩa là tối đa 180 giây
+### Bẫy 12 — thời gian chờ 60 giây và 2 lần thử lại nghĩa là tối đa 180 giây
 Sai. Khi có retry, `@timeout` là cumulative timeout của procedure.
 
-### Bẫy 13 — SQL tự follow redirect từ endpoint cũ sang endpoint mới
+### Bẫy 13 — SQL tự chuyển hướng từ endpoint cũ sang endpoint mới
 Sai. `sp_invoke_external_rest_endpoint` không tự follow HTTP redirects.
 
-### Bẫy 14 — `AI_GENERATE_RESPONSE` là native RAG helper của SQL Server 2025
+### Bẫy 14 — `AI_GENERATE_RESPONSE` là hàm RAG tích hợp của SQL Server 2025
 Sai. Function này hiện là Preview chỉ ở Fabric Warehouse/SQL analytics endpoint.
 
 ---
 
-# 📝 PHẦN 20 — MOCK QUESTIONS
+# PHẦN 20 — CÂU HỎI TỰ KIỂM TRA
 
-## Question 1 — RAG use case
+## Câu 1 — Trường hợp sử dụng RAG
 Câu nào phù hợp nhất với RAG?
 
 - A. Tính `SUM(SalesAmount)` tháng này.
@@ -1103,7 +1131,7 @@ Câu nào phù hợp nhất với RAG?
 
 ---
 
-## Question 2 — Structured data to LLM
+## Câu 2 — Gửi dữ liệu có cấu trúc tới LLM
 Bạn cần gửi 5 retrieved rows cho model. Cách phù hợp:
 
 - A. Gửi binary page SQL.
@@ -1115,7 +1143,7 @@ Bạn cần gửi 5 retrieved rows cho model. Cách phù hợp:
 
 ---
 
-## Question 3 — Permission
+## Câu 3 — Quyền cần thiết
 Principal trực tiếp gọi current `sp_invoke_external_rest_endpoint` và truyền database scoped credential. Bộ quyền tối thiểu liên quan trực tiếp là gì?
 
 - A. `UNMASK`
@@ -1127,7 +1155,7 @@ Principal trực tiếp gọi current `sp_invoke_external_rest_endpoint` và tru
 
 ---
 
-## Question 4 — Response path
+## Câu 4 — Đường dẫn lấy dữ liệu trong phản hồi
 SQL wrapper chứa remote chat response trong `result`. Path lấy scalar answer:
 
 - A. `JSON_VALUE(@Response,'$.result.choices[0].message.content')`
@@ -1139,7 +1167,7 @@ SQL wrapper chứa remote chat response trong `result`. Path lấy scalar answer
 
 ---
 
-## Question 5 — Grounding
+## Câu 5 — Buộc câu trả lời dựa trên dữ liệu được cung cấp
 Cách giảm hallucination phù hợp nhất:
 
 - A. Tăng temperature tối đa.
@@ -1151,7 +1179,7 @@ Cách giảm hallucination phù hợp nhất:
 
 ---
 
-## Question 6 — Security order
+## Câu 6 — Thứ tự xử lý bảo mật
 Multi-tenant RAG nên:
 
 - A. Retrieve tất cả tenants, gửi LLM, rồi mask answer.
@@ -1163,19 +1191,19 @@ Multi-tenant RAG nên:
 
 ---
 
-## Question 7 — Platform enablement
-Azure SQL Database theo current docs:
+## Câu 7 — Cách bật theo nền tảng
+Theo tài liệu hiện hành, Azure SQL Database dùng:
 
 - A. `sp_invoke_external_rest_endpoint` enabled by default.
 - B. Luôn cần `sp_configure external rest endpoint enabled`.
 - C. Không hỗ trợ external REST.
 - D. Chỉ hỗ trợ HTTP không TLS.
 
-**Đáp án: A.** SQL Server 2025/MI có enablement requirement khác.
+**Đáp án: A.** SQL Server 2025 và Azure SQL Managed Instance có yêu cầu kích hoạt khác.
 
 ---
 
-## Question 8 — Retry
+## Câu 8 — Thử lại
 Endpoint trả 403 do Managed Identity chưa được cấp RBAC. Tăng `@retry_count` lên 10 có giải quyết root cause không?
 
 - A. Có.
@@ -1185,7 +1213,7 @@ Endpoint trả 403 do Managed Identity chưa được cấp RBAC. Tăng `@retry_
 
 ---
 
-# ✅ PHẦN 21 — EXAM-READY CHECKLIST
+# PHẦN 21 — DANH SÁCH TỰ KIỂM TRA
 
 Bạn chỉ nên xem file 10 đã vững khi có thể:
 
@@ -1205,16 +1233,16 @@ Bạn chỉ nên xem file 10 đã vững khi có thể:
 - [ ] Hiểu `@response` wrapper: `response` metadata + `result` remote payload.
 - [ ] Chọn `JSON_VALUE` vs `JSON_QUERY` vs `OPENJSON`.
 - [ ] Biết `JSON_VALUE` không `RETURNING` giới hạn 4,000 ký tự và parse answer dài bằng `OPENJSON`.
-- [ ] Validate return code / HTTP error.
+- [ ] Kiểm tra mã trả về và lỗi HTTP.
 - [ ] Apply RLS/ACL before outbound prompt.
 - [ ] Dùng Top-K, không gửi toàn database.
 - [ ] Nhớ REST limits, cumulative timeout, retry status codes, concurrency cap và no-redirect behavior.
 - [ ] Nhận diện prompt-injection risk từ retrieved documents.
-- [ ] Ghép Hybrid/RRF retrieval với RAG khi scenario cần lexical + semantic.
+- [ ] Ghép truy xuất kết hợp (Hybrid/RRF) với RAG khi tình huống cần cả tìm theo từ khóa và theo ngữ nghĩa.
 
 ---
 
-# 🔗 PHẦN 22 — TÀI LIỆU THAM KHẢO CHÍNH THỨC
+# PHẦN 22 — TÀI LIỆU THAM KHẢO CHÍNH THỨC
 
 1. [DP-800 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-800)
 2. [Microsoft Learn — Implement AI capabilities in database solutions](https://learn.microsoft.com/en-us/training/paths/implement-ai-capabilities-database-solutions/)
@@ -1232,6 +1260,6 @@ Bạn chỉ nên xem file 10 đã vững khi có thể:
 
 ---
 
-## Ghi chú API version
+## Ghi chú phiên bản API
 
 Các URL model deployment và `api-version` của cloud AI services thay đổi theo service release cadence. Trong bài thi, hãy tập trung vào architecture/syntax SQL được blueprint yêu cầu; khi thực hành thật, lấy endpoint/API version hiện hành từ resource và Microsoft Learn thay vì học thuộc một preview API version cũ.

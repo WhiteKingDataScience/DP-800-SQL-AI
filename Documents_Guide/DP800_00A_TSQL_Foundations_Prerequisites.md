@@ -1,37 +1,51 @@
-# DP-800 Prerequisite: Nền tảng T-SQL cho người mới bắt đầu
+# Kiến thức đầu vào DP-800 — Nền tảng T-SQL cho người mới bắt đầu
 
-> **Vai trò của file này:** kiến thức đầu vào, **không phải domain thứ tư của kỳ thi**.  
-> **Học trước:** các file Domain 1–3 nếu bạn chưa tự viết được `SELECT`, `JOIN`, `GROUP BY`, `INSERT`, `UPDATE`, `DELETE` và transaction.  
+> **Vai trò của file này:** kiến thức đầu vào, **không phải miền thứ tư của kỳ thi**.  
+> **Học file này trước Miền 1–3** nếu bạn chưa tự viết được `SELECT`, `JOIN`, `GROUP BY`, `INSERT`, `UPDATE`, `DELETE` và transaction.  
 > **Blueprint đối chiếu:** DP-800, skills measured as of **March 12, 2026**.  
 > **Rà soát:** 09/08/2026.
 
-Microsoft Learn xếp DP-800 ở mức Intermediate và module Advanced T-SQL giả định người học đã biết `SELECT`, `JOIN`, `WHERE`, `GROUP BY` và aggregate functions. Vì vậy, chương này lấp đúng phần kiến thức đầu vào mà người mới thường thiếu.
+DP-800 không phải khóa “SQL từ con số 0”. Microsoft Learn xếp kỳ thi ở mức trung cấp và giả định người học đã biết truy vấn SQL cơ bản. Vì vậy, chương này lấp phần kiến thức đầu vào mà người mới thường thiếu.
+
+Bạn có thể hình dung mối quan hệ như sau:
+
+```text
+T-SQL cơ bản
+   ↓ giúp bạn đọc và thay đổi dữ liệu
+Thiết kế database + bảo mật + tối ưu
+   ↓ giúp hệ thống đúng, nhanh và an toàn
+Vector Search + RAG
+   ↓ giúp ứng dụng AI tìm và sử dụng dữ liệu doanh nghiệp
+DP-800
+```
+
+Nếu chưa hiểu một câu `SELECT` đang đọc bảng nào, lọc dòng nào hoặc nối hai bảng theo điều kiện nào, bạn sẽ rất khó hiểu các ví dụ vector, RAG và bảo mật ở những chương sau.
 
 ## Mục tiêu sau khi học
 
 Bạn cần tự làm được các việc sau mà không nhìn đáp án:
 
-1. Giải thích table, row, column, primary key và foreign key.
-2. Viết `SELECT` có filter, sort, aggregate và `JOIN`.
+1. Giải thích bảng (table), dòng (row), cột (column), khóa chính và khóa ngoại.
+2. Viết `SELECT` có lọc, sắp xếp, tính tổng hợp và `JOIN`.
 3. Xử lý `NULL` đúng bằng `IS NULL`, `IS NOT NULL` và `COALESCE`.
 4. Phân biệt `WHERE` với `HAVING`, `INNER JOIN` với `LEFT JOIN`.
 5. Viết `INSERT`, `UPDATE`, `DELETE` có điều kiện an toàn.
-6. Gom nhiều thay đổi vào transaction và biết khi nào `COMMIT`/`ROLLBACK`.
-7. Đọc được lỗi thường gặp trước khi chuyển sang CTE, window functions, programmability, security và AI.
+6. Gom nhiều thay đổi vào một giao dịch (transaction) và biết khi nào `COMMIT` hoặc `ROLLBACK`.
+7. Đọc được lỗi thường gặp trước khi chuyển sang CTE, hàm cửa sổ, lập trình database, bảo mật và AI.
 
 ---
 
-# PHẦN 1 — MENTAL MODEL CỦA DATABASE QUAN HỆ
+# PHẦN 1 — CÁCH HÌNH DUNG CƠ SỞ DỮ LIỆU QUAN HỆ
 
-## 1. Table, row và column
+## 1. Bảng, dòng và cột
 
-Hãy hình dung một table giống một bảng tính có quy tắc chặt chẽ:
+Hãy hình dung một bảng trong database giống bảng tính nhưng có quy tắc chặt chẽ hơn:
 
-- **Column** mô tả một thuộc tính và data type của thuộc tính đó.
-- **Row** là một bản ghi cụ thể.
-- **Primary key (PK)** nhận diện duy nhất một row.
-- **Foreign key (FK)** bảo đảm giá trị tham chiếu tới row có thật ở table khác.
-- **Constraint** ngăn dữ liệu sai được ghi vào database.
+- **Cột (column)** mô tả một thuộc tính và kiểu dữ liệu của thuộc tính đó.
+- **Dòng (row)** là một bản ghi cụ thể.
+- **Khóa chính (primary key — PK)** nhận diện duy nhất một dòng.
+- **Khóa ngoại (foreign key — FK)** bảo đảm giá trị tham chiếu tới dòng có thật ở bảng khác.
+- **Ràng buộc (constraint)** ngăn dữ liệu sai được ghi vào database.
 
 Ví dụ quan hệ:
 
@@ -55,17 +69,19 @@ Trong thực tế, các nhóm này thường được gọi chung là T-SQL stat
 
 ---
 
-# PHẦN 2 — LAB NỀN TẢNG CHẠY ĐỘC LẬP
+# PHẦN 2 — BÀI THỰC HÀNH NỀN TẢNG CHẠY ĐỘC LẬP
 
 ## 3. Chọn môi trường
 
-Bạn có thể dùng SQL Server 2022/2025, Azure SQL Database hoặc SQL database in Fabric khi tính năng được hỗ trợ. Với người mới, dễ nhất là SQL Server Developer Edition + SQL Server Management Studio (SSMS), hoặc một Azure SQL Database dùng riêng cho lab.
+Bạn có thể dùng SQL Server 2022/2025, Azure SQL Database hoặc SQL database in Fabric khi tính năng được hỗ trợ. Với người mới, dễ nhất là SQL Server Developer Edition kết hợp SQL Server Management Studio (SSMS), hoặc một Azure SQL Database dùng riêng để thực hành.
 
 > **Lưu ý Azure SQL Database:** tạo database từ Azure portal/CLI rồi kết nối trực tiếp vào database đó. Không chạy `USE another_database` để chuyển database trong cùng connection.
 
-## 4. Tạo schema lab và dữ liệu mẫu
+## 4. Tạo schema thực hành và dữ liệu mẫu
 
-Script sau có chủ đích nhỏ, dễ reset và đủ cho toàn bộ ví dụ trong chương. Chỉ chạy trong database lab, không chạy trong production.
+Script sau tạo một cửa hàng rất nhỏ gồm khách hàng, sản phẩm, đơn hàng và dòng sản phẩm. Toàn bộ ví dụ trong chương đều dùng bốn bảng này để bạn không phải đổi ngữ cảnh liên tục. Chỉ chạy trong database thực hành, không chạy trong môi trường thật.
+
+Trước khi chạy, hãy đọc sơ đồ quan hệ ở Phần 1. Khi đọc lệnh, tập trả lời bốn câu hỏi: bảng nào được tạo, cột nào nhận diện một dòng, cột nào liên kết sang bảng khác và quy tắc nào ngăn dữ liệu sai.
 
 ```sql
 -- Xóa theo thứ tự từ table con đến table cha để không vi phạm FOREIGN KEY.
@@ -160,19 +176,21 @@ VALUES
 GO
 ```
 
-### Vì sao script ghi rõ danh sách column khi `INSERT`?
+### Vì sao đoạn lệnh ghi rõ danh sách cột khi `INSERT`?
 
 `INSERT dbo.Customer VALUES (...)` phụ thuộc vào thứ tự vật lý của mọi column và dễ hỏng khi schema thay đổi. Ghi rõ `(FullName, Email, City)` làm intent rõ ràng và tránh vô tình chèn sai cột.
 
 ### Vì sao dùng tiền tố `N` trước chuỗi tiếng Việt?
 
-`N'Đà Nẵng'` tạo Unicode string literal. Điều này quan trọng khi đích là `nvarchar`; thiếu `N` có thể làm mất ký tự ở môi trường/code page không phù hợp.
+`N'Đà Nẵng'` tạo một chuỗi Unicode. Điều này quan trọng khi cột đích là `nvarchar`; thiếu `N` có thể làm mất ký tự ở môi trường dùng bảng mã không phù hợp.
 
 ---
 
-# PHẦN 3 — SELECT, FILTER VÀ SORT
+# PHẦN 3 — ĐỌC, LỌC VÀ SẮP XẾP DỮ LIỆU
 
 ## 5. `SELECT` tối thiểu
+
+**Bài toán:** đọc danh sách sản phẩm nhưng chỉ lấy bốn cột ứng dụng thực sự cần. `SELECT` chỉ ra cột cần trả về; `FROM` chỉ ra bảng nguồn; `AS p` đặt bí danh ngắn để tham chiếu bảng rõ ràng hơn.
 
 ```sql
 SELECT
@@ -183,14 +201,18 @@ SELECT
 FROM dbo.Product AS p;
 ```
 
+Với dữ liệu mẫu, kết quả có ba dòng sản phẩm. Truy vấn này **chỉ đọc**, không sửa dữ liệu. Vì chưa có `ORDER BY`, SQL Server không cam kết thứ tự các dòng.
+
 Quy tắc nên tập ngay từ đầu:
 
 - Ghi schema, ví dụ `dbo.Product`, thay vì chỉ `Product`.
 - Dùng alias ngắn nhưng có nghĩa, ví dụ `p` cho Product.
-- Không dùng `SELECT *` trong code production nếu chỉ cần vài cột.
-- Không giả định thứ tự row nếu không có `ORDER BY`.
+- Không dùng `SELECT *` trong mã chạy ở môi trường thật nếu chỉ cần vài cột.
+- Không giả định thứ tự dòng nếu không có `ORDER BY`.
 
-## 6. `WHERE`, toán tử và parameter
+## 6. `WHERE`, toán tử và tham số
+
+**Bài toán:** chỉ lấy sản phẩm đang hoạt động và có giá từ 400.000 trở lên, sau đó sắp xếp giá giảm dần. Biến `@MinPrice` giúp tách giá trị đầu vào khỏi câu truy vấn, thay vì viết cứng con số ở nhiều chỗ.
 
 ```sql
 DECLARE @MinPrice decimal(12,2) = 400000.00;
@@ -201,6 +223,8 @@ WHERE p.IsActive = 1
   AND p.UnitPrice >= @MinPrice
 ORDER BY p.UnitPrice DESC, p.ProductName ASC;
 ```
+
+Với dữ liệu mẫu, kết quả gồm “Gói thực hành DP-800” và “Sách AI cho dữ liệu”. `WHERE` loại dòng không đạt điều kiện; `ORDER BY` chỉ sắp xếp các dòng còn lại.
 
 Các toán tử cần biết:
 
@@ -264,7 +288,7 @@ HAVING ...
 ORDER BY ...;
 ```
 
-Nhưng mental model logic hữu ích là:
+Nhưng cách hình dung theo thứ tự xử lý logic sẽ hữu ích hơn:
 
 ```text
 FROM/JOIN/ON → WHERE → GROUP BY → HAVING → SELECT → DISTINCT → ORDER BY → TOP/OFFSET
@@ -276,7 +300,7 @@ Vì vậy alias tạo trong `SELECT` thường chưa dùng được ở `WHERE`,
 
 # PHẦN 4 — JOIN
 
-## 9. `INNER JOIN`: chỉ row khớp ở hai phía
+## 9. `INNER JOIN`: chỉ giữ dòng khớp ở hai phía
 
 ```sql
 SELECT
@@ -299,7 +323,7 @@ ORDER BY o.OrderID, l.OrderLineNo;
 
 `ON` mô tả quan hệ giữa hai nguồn. Nếu bỏ điều kiện join hoặc viết sai key, số row có thể nhân lên thành Cartesian product.
 
-## 10. `LEFT JOIN`: giữ mọi row bên trái
+## 10. `LEFT JOIN`: giữ mọi dòng bên trái
 
 Yêu cầu: hiển thị mọi khách hàng, kể cả người chưa có đơn.
 
@@ -319,6 +343,8 @@ Dùng `COUNT(o.OrderID)`, không dùng `COUNT(*)`, vì row khách chưa có đơ
 
 ### Bẫy biến `LEFT JOIN` thành `INNER JOIN`
 
+Mục tiêu của ví dụ sau là cho thấy vị trí đặt điều kiện lọc có thể làm mất những dòng “không khớp” mà `LEFT JOIN` đáng lẽ phải giữ lại.
+
 ```sql
 -- WHERE loại row NULL-extended, nên khách chưa có đơn biến mất.
 SELECT c.FullName, o.OrderID
@@ -335,9 +361,9 @@ LEFT JOIN dbo.SalesOrder AS o
    AND o.OrderStatus = 'Paid';
 ```
 
-## 11. Chọn loại join
+## 11. Chọn loại phép nối
 
-| Requirement | Chọn |
+| Yêu cầu của bài toán | Chọn |
 |---|---|
 | Chỉ lấy row có match | `INNER JOIN` |
 | Giữ mọi row phía trái, match nếu có | `LEFT JOIN` |
@@ -348,9 +374,11 @@ LEFT JOIN dbo.SalesOrder AS o
 
 ---
 
-# PHẦN 5 — AGGREGATE, `GROUP BY` VÀ `HAVING`
+# PHẦN 5 — TÍNH TỔNG HỢP, `GROUP BY` VÀ `HAVING`
 
 ## 12. Tính tổng theo đơn hàng
+
+**Bài toán:** từ các dòng sản phẩm, tính tổng tiền, số dòng và tổng số lượng cho từng đơn hàng. `GROUP BY l.OrderID` tạo một nhóm cho mỗi đơn; các hàm `SUM` và `COUNT` tính trên từng nhóm đó.
 
 ```sql
 SELECT
@@ -363,12 +391,16 @@ GROUP BY l.OrderID
 ORDER BY l.OrderID;
 ```
 
-Mọi column trong `SELECT` phải:
+Đầu ra có một dòng cho mỗi `OrderID`, không còn một dòng cho mỗi sản phẩm. Đây là khác biệt quan trọng giữa truy vấn tổng hợp và truy vấn chi tiết.
 
-- nằm trong aggregate function như `SUM`, `COUNT`, `AVG`, `MIN`, `MAX`; hoặc
+Mọi cột trong `SELECT` phải:
+
+- nằm trong hàm tổng hợp như `SUM`, `COUNT`, `AVG`, `MIN`, `MAX`; hoặc
 - xuất hiện trong `GROUP BY`.
 
-## 13. `WHERE` lọc row, `HAVING` lọc group
+## 13. `WHERE` lọc từng dòng, `HAVING` lọc từng nhóm
+
+Ví dụ sau lọc đơn hàng theo hai thời điểm khác nhau: `WHERE` loại từng dòng trước khi tính tổng, còn `HAVING` loại cả nhóm sau khi `SUM` đã được tính.
 
 ```sql
 DECLARE @FromDate date = '2026-08-01';
@@ -388,9 +420,11 @@ ORDER BY CustomerTotal DESC;
 
 ---
 
-# PHẦN 6 — SUBQUERY VÀ `EXISTS`
+# PHẦN 6 — TRUY VẤN CON VÀ `EXISTS`
 
 ## 14. Khách có ít nhất một đơn hàng
+
+**Bài toán:** kiểm tra sự tồn tại, không cần lấy chi tiết đơn hàng. Với từng khách hàng ở truy vấn ngoài, `EXISTS` dừng ngay khi truy vấn con tìm thấy một đơn hàng khớp.
 
 ```sql
 SELECT c.CustomerID, c.FullName
@@ -403,7 +437,7 @@ WHERE EXISTS
 );
 ```
 
-Subquery này **correlated** vì tham chiếu `c.CustomerID` từ outer query. `EXISTS` chỉ cần biết có row hay không; giá trị `SELECT 1` không được trả ra ngoài.
+Đây là **truy vấn con tương quan** vì nó tham chiếu `c.CustomerID` từ truy vấn ngoài. `EXISTS` chỉ cần biết có dòng hay không; giá trị `SELECT 1` không được trả ra ngoài. Với dữ liệu mẫu, An và Bình được trả về, còn Chi thì không.
 
 ## 15. Khách chưa có đơn hàng
 
@@ -444,6 +478,8 @@ SELECT @@ROWCOUNT AS RowsUpdated;
 
 ## 17. Thực hành DML nhưng luôn hoàn tác
 
+Khối lệnh sau cho phép bạn thử `INSERT`, `UPDATE` và `DELETE`, xem kết quả ngay trong giao dịch, rồi dùng `ROLLBACK` để đưa dữ liệu về trạng thái ban đầu.
+
 ```sql
 BEGIN TRANSACTION;
 
@@ -469,7 +505,7 @@ ROLLBACK TRANSACTION;
 
 ---
 
-# PHẦN 8 — TRANSACTION VÀ ERROR HANDLING
+# PHẦN 8 — GIAO DỊCH VÀ XỬ LÝ LỖI
 
 ## 18. Tính nguyên tử
 
@@ -517,9 +553,9 @@ Phần nâng cao và các bẫy chi tiết nằm trong file Programmability & Ad
 
 ---
 
-# PHẦN 9 — DATA TYPE VÀ CONVERSION CẦN NHỚ
+# PHẦN 9 — KIỂU DỮ LIỆU VÀ CHUYỂN ĐỔI KIỂU
 
-## 19. Chọn type theo nghĩa của dữ liệu
+## 19. Chọn kiểu dữ liệu theo ý nghĩa của dữ liệu
 
 | Dữ liệu | Gợi ý | Tránh |
 |---|---|---|
@@ -530,7 +566,9 @@ Phần nâng cao và các bẫy chi tiết nằm trong file Programmability & Ad
 | Ngày + giờ | `datetime2` | mặc định chọn `datetime` cũ |
 | Cờ true/false | `bit` | string `'yes'/'no'` không constraint |
 
-## 20. Conversion rõ ràng
+## 20. Chuyển đổi kiểu dữ liệu rõ ràng
+
+**Bài toán:** dữ liệu nhập vào đang là chuỗi, nhưng phép tính cần số thập phân và ngày. Ví dụ so sánh `CAST` với `TRY_CONVERT`, đặc biệt ở trường hợp dữ liệu ngày không hợp lệ.
 
 ```sql
 DECLARE @TextPrice varchar(20) = '420000.50';
@@ -541,7 +579,7 @@ SELECT
     TRY_CONVERT(date, 'not-a-date', 23) AS InvalidBecomesNull;
 ```
 
-`TRY_CONVERT` trả `NULL` khi conversion thất bại trong trường hợp được phép, còn `CONVERT`/`CAST` thường ném lỗi. Trong production, không được xem `NULL` im lặng là đủ; hãy validate và log dữ liệu lỗi.
+Hai cột đầu trả về `420000.50` và ngày `2026-08-09`; cột cuối trả `NULL` thay vì làm cả truy vấn lỗi. `TRY_CONVERT` trả `NULL` khi chuyển đổi thất bại trong trường hợp được phép, còn `CONVERT`/`CAST` thường ném lỗi. Ở môi trường thật, không được xem `NULL` im lặng là đủ; hãy kiểm tra và ghi nhật ký dữ liệu lỗi.
 
 ### SARGability cơ bản
 
@@ -645,11 +683,11 @@ Gợi ý: dùng template `TRY...CATCH`, `XACT_STATE()`, `ROLLBACK`, `THROW` ở 
 
 ---
 
-# PHẦN 12 — CHECKLIST SẴN SÀNG VÀ ĐƯỜNG HỌC TIẾP
+# PHẦN 12 — DANH SÁCH TỰ KIỂM TRA VÀ ĐƯỜNG HỌC TIẾP
 
 Bạn có thể chuyển sang các chương DP-800 chính khi tự trả lời “Có” cho tất cả:
 
-- [ ] Tạo và reset được bốn table của lab.
+- [ ] Tạo và đặt lại được bốn bảng của bài thực hành.
 - [ ] Viết được query có `WHERE`, `ORDER BY` và typed parameter.
 - [ ] Giải thích được vì sao `= NULL` sai.
 - [ ] Viết được `INNER JOIN` và `LEFT JOIN` đúng key.

@@ -1,51 +1,66 @@
-# DP-800 Domain 1: Design & Implement SQL Solutions by Using AI-Assisted Tools
+# DP-800 Miền 1 — Phát triển SQL với công cụ hỗ trợ AI
 
-> **Miền 1:** Design and Develop Database Solutions (35–40%)  
-> **Chủ đề:** Design and implement SQL solutions by using AI-assisted tools  
+> **Miền 1:** Thiết kế và phát triển giải pháp cơ sở dữ liệu (35–40%)  
+> **Chủ đề:** Copilot, hướng dẫn cho AI, Agent mode và Model Context Protocol (MCP)  
 > **Ưu tiên cá nhân:** **Score Weak Point #1**  
 > **Blueprint:** DP-800 — Skills measured as of **March 12, 2026**  
 > **Rà soát:** **12/08/2026**
 
 > [!IMPORTANT]
-> Mục tiêu của file này không phải học thuộc tên sản phẩm. Bạn phải hiểu chuỗi **Copilot → instructions/context → Agent/MCP → identity → database permissions** và chọn đúng giải pháp cho scenario.
+> Mục tiêu của file này không phải học thuộc tên sản phẩm. Bạn phải hiểu chuỗi **Copilot → hướng dẫn/ngữ cảnh → Agent/MCP → danh tính → quyền database** và chọn đúng giải pháp cho từng tình huống.
+
+## Chương này giúp bạn làm được việc gì?
+
+Copilot có thể giải thích một truy vấn, gợi ý T-SQL hoặc dùng MCP để gọi công cụ. Nhưng AI không tự biết quy ước đặt tên của công ty, không tự có quyền truy cập cơ sở dữ liệu và cũng không bảo đảm mã sinh ra là an toàn.
+
+Ví dụ, bạn yêu cầu AI “xóa các đơn hàng thử nghiệm”. Một hệ thống an toàn phải trả lời được:
+
+- AI đang dùng model và ngữ cảnh nào?
+- AI chỉ tư vấn hay được phép tự gọi tool?
+- tool nào được bật?
+- tool chạy dưới danh tính nào?
+- danh tính đó có quyền `DELETE` trên bảng nào?
+- ai sẽ xem lại thay đổi trước khi chạy?
+
+Đó chính là trọng tâm của chương: dùng AI để tăng năng suất nhưng vẫn giữ **đặc quyền tối thiểu (least privilege)**, kiểm soát dữ liệu gửi ra ngoài và không xem câu trả lời của model như mã đã được tin cậy.
 
 ---
 
-## 1. Blueprint chính thức
+## 1. Phạm vi thi chính thức
 
 Theo [DP-800 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-800), bạn phải có thể:
 
-1. Interpret the security impact of AI-assisted tools.
-2. Enable GitHub Copilot và Microsoft Copilot in Fabric.
-3. Configure model và MCP tool options trong Copilot chat.
-4. Create/configure GitHub Copilot instruction files.
-5. Connect MCP server endpoints, gồm Microsoft SQL Server và Fabric lakehouse.
+1. Giải thích ảnh hưởng bảo mật của công cụ hỗ trợ AI.
+2. Bật GitHub Copilot và Microsoft Copilot trong Fabric.
+3. Cấu hình model và các MCP tool trong Copilot chat.
+4. Tạo file hướng dẫn cho GitHub Copilot.
+5. Kết nối MCP endpoint cho Microsoft SQL Server và Fabric lakehouse.
 
 ---
 
-# PHẦN A — MENTAL MODEL
+# PHẦN A — CÁCH HÌNH DUNG TOÀN BỘ HỆ THỐNG
 
-## 2. AI-assisted SQL gồm những lớp nào?
+## 2. Phát triển SQL có AI hỗ trợ gồm những lớp nào?
 
 ```text
-User prompt
+Yêu cầu của người dùng
    ↓
 Copilot / AI client
    ↓
-Model + context + instructions
+Model + ngữ cảnh + hướng dẫn
    ↓
 Ask mode hoặc Agent mode
    ↓
 (Optional) MCP tools
    ↓
-Authentication / RBAC / DB permissions
+Xác thực / RBAC / quyền database
    ↓
 SQL Server / Azure SQL / Fabric
 ```
 
 | Lớp | Vai trò | Điều không nên nhầm |
 |---|---|---|
-| Model | Reasoning / sinh code | Không cấp quyền DB |
+| Model | Lập luận và sinh mã | Không cấp quyền cơ sở dữ liệu |
 | Copilot client | UI/host | Không phải MCP server |
 | Instructions | Hướng dẫn hành vi | Không phải security boundary |
 | MCP | Cho agent discover/call tools | Không tự cấp quyền |
@@ -55,9 +70,9 @@ SQL Server / Azure SQL / Fabric
 
 ---
 
-# PHẦN B — SECURITY IMPACT
+# PHẦN B — ẢNH HƯỞNG BẢO MẬT
 
-## 3. Prompt/data leakage
+## 3. Rò rỉ dữ liệu qua câu lệnh gửi cho AI (prompt)
 
 Không đưa vào prompt nếu policy không cho phép:
 
@@ -66,9 +81,9 @@ Không đưa vào prompt nếu policy không cho phép:
 - PII/PHI/payment data không cần thiết;
 - production data vượt data-classification/residency policy.
 
-**Better pattern:** dùng Managed Identity, environment variables, secret store/Key Vault; prompt chỉ dùng placeholder.
+**Cách làm an toàn hơn:** dùng Managed Identity, biến môi trường hoặc Key Vault; trong prompt chỉ dùng giá trị giữ chỗ, không dán bí mật thật.
 
-## 4. AI-generated code không phải trusted code
+## 4. Mã do AI sinh ra không mặc nhiên đáng tin cậy
 
 AI có thể sinh:
 
@@ -80,13 +95,13 @@ AI có thể sinh:
 - transaction sai;
 - query gây scan/lock lớn.
 
-Workflow an toàn:
+Quy trình an toàn:
 
 ```text
 Generate → Review → Test → Check permissions → Inspect impact → Execute
 ```
 
-## 5. Least privilege
+## 5. Nguyên tắc đặc quyền tối thiểu (least privilege)
 
 Nếu support agent chỉ cần xem inventory:
 
@@ -103,21 +118,21 @@ read-only identity
 
 ---
 
-# PHẦN C — GITHUB COPILOT IN SSMS
+# PHẦN C — GITHUB COPILOT TRONG SSMS
 
 Nguồn:
 - [GitHub Copilot in SSMS](https://learn.microsoft.com/en-us/ssms/github-copilot/overview)
 - [Agent mode](https://learn.microsoft.com/en-us/ssms/github-copilot/agent-mode)
 - [MCP servers in SSMS](https://learn.microsoft.com/en-us/ssms/github-copilot/mcp-servers)
 
-## 6. Ask mode vs Agent mode
+## 6. So sánh chế độ hỏi đáp và chế độ tác nhân
 
-### Ask mode
+### Chế độ hỏi đáp (Ask mode)
 - giải thích/sinh/sửa T-SQL;
 - hỏi schema/context;
-- thường là single-response workflow.
+- thường là quy trình hỏi–đáp một lượt.
 
-### Agent mode
+### Chế độ tác nhân (Agent mode)
 - goal nhiều bước;
 - chạy query/tools;
 - có thể gọi MCP;
@@ -127,9 +142,9 @@ Nguồn:
 
 ---
 
-# PHẦN D — CUSTOM INSTRUCTIONS
+# PHẦN D — HƯỚNG DẪN TÙY CHỈNH CHO COPILOT
 
-## 7. Repository-wide instructions
+## 7. Hướng dẫn áp dụng cho toàn bộ kho mã nguồn
 
 File:
 
@@ -140,7 +155,7 @@ File:
 Ví dụ:
 
 ```markdown
-# SQL development instructions
+# Hướng dẫn phát triển SQL
 
 - Target SQL Server 2025 and Azure SQL Database unless stated otherwise.
 - Qualify objects with schema names.
@@ -154,7 +169,9 @@ Ví dụ:
 
 Nguồn: [GitHub repository custom instructions](https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/add-custom-instructions/add-repository-instructions)
 
-## 8. Path-specific instructions
+## 8. Hướng dẫn riêng cho từng đường dẫn
+
+Ví dụ sau giới hạn hướng dẫn cho những file hoặc thư mục nhất định, tránh áp dụng một quy tắc không phù hợp cho toàn repository.
 
 ```text
 .github/instructions/sql.instructions.md
@@ -167,14 +184,14 @@ applyTo: "**/*.sql"
 
 - Use schema-qualified object names.
 - Use parameterized dynamic SQL.
-- Use TRY/CATCH for transactional write workflows.
+- Dùng TRY/CATCH cho quy trình ghi dữ liệu có transaction.
 ```
 
 GitHub cũng hỗ trợ `AGENTS.md` trên một số Copilot agent surfaces. Hỗ trợ phụ thuộc client/surface, nên không học máy móc một file cho mọi nơi.
 
 ---
 
-# PHẦN E — CẬP NHẬT 2026: SSMS DATABASE INSTRUCTIONS
+# PHẦN E — CẬP NHẬT 2026: HƯỚNG DẪN Ở CẤP DATABASE TRONG SSMS
 
 Đây là phần mới cần bổ sung so với bản repo ngày 09/08/2026.
 
@@ -182,7 +199,7 @@ Nguồn:
 - [Database instructions in SSMS](https://learn.microsoft.com/en-us/ssms/github-copilot/database-instructions)
 - [Execution context for GitHub Copilot](https://learn.microsoft.com/en-us/ssms/github-copilot/execution-context)
 
-## 9. Repository instructions khác database instructions
+## 9. Phân biệt hướng dẫn trong kho mã nguồn và hướng dẫn trong cơ sở dữ liệu
 
 ```text
 Git repository:
@@ -218,7 +235,7 @@ Status values:
 GO
 ```
 
-Use case: cột/tên object khó hiểu, Copilot cần business meaning/canonical guidance.
+Trường hợp sử dụng: tên cột hoặc đối tượng khó hiểu, Copilot cần biết ý nghĩa nghiệp vụ và quy ước chuẩn.
 
 ## 11. Database `CONSTITUTION.md`
 
@@ -234,7 +251,7 @@ Treat UPDATE and DELETE as destructive operations.';
 GO
 ```
 
-## 12. `agentExecuteAsUser`
+## 12. Chế độ thực thi theo người dùng với `agentExecuteAsUser`
 
 Trong Agent mode, `CONSTITUTION.md` có thể chỉ định identity để Copilot execute query:
 
@@ -262,7 +279,7 @@ GRANT IMPERSONATE ON USER::ReportingUser TO AppDeveloper;
 GO
 ```
 
-### Điểm thi/security
+### Điểm cần nhớ về bảo mật khi làm bài
 
 - `agentExecuteAsUser` scope theo database.
 - Connected user cần `IMPERSONATE` phù hợp.
@@ -282,11 +299,11 @@ GO
 
 ---
 
-# PHẦN F — MICROSOFT COPILOT IN FABRIC
+# PHẦN F — MICROSOFT COPILOT TRONG FABRIC
 
 Nguồn: [Enable and configure Copilot in Microsoft Fabric](https://learn.microsoft.com/en-us/fabric/fundamentals/copilot-enable-fabric)
 
-## 13. Prerequisites hiện hành
+## 13. Điều kiện cần có hiện hành
 
 - paid Fabric capacity **F2+** hoặc Power BI Premium **P1+**;
 - tenant settings;
@@ -302,9 +319,9 @@ Capacity → Tenant settings → Workspace → User access → Copilot
 
 ---
 
-# PHẦN G — MODEL OPTIONS
+# PHẦN G — CHỌN MODEL AI
 
-## 14. Đừng học thuộc danh sách model
+## 14. Không học thuộc máy móc danh sách model
 
 Model availability thay đổi theo:
 
@@ -361,7 +378,7 @@ Entity abstraction + RBAC + policies
 SQL database
 ```
 
-## 16. Seven DML tools
+## 16. Bảy công cụ DML
 
 1. `describe_entities`
 2. `create_record`
@@ -377,9 +394,11 @@ SQL MCP Server không nên được hiểu là arbitrary NL2SQL server. Agent th
 
 ---
 
-# PHẦN J — HANDS-ON SQL MCP
+# PHẦN J — THỰC HÀNH SQL MCP
 
-## 17. Sample table
+## 17. Bảng dữ liệu mẫu
+
+Bảng nhỏ này là dữ liệu thử để MCP đọc. Không dùng dữ liệu nhạy cảm hoặc dữ liệu production khi học cách cấu hình tool.
 
 ```sql
 CREATE TABLE dbo.Products
@@ -483,9 +502,9 @@ dab start --mcp-stdio --config ./dab-config.json
 
 ---
 
-# PHẦN K — SQL MCP VS FABRIC MCP
+# PHẦN K — SO SÁNH SQL MCP VÀ FABRIC MCP
 
-| Scenario | Chọn |
+| Tình huống | Chọn |
 |---|---|
 | CRUD/aggregate/execute approved SQL entities | SQL MCP Server / DAB |
 | Fabric APIs / OneLake / Fabric items | Fabric MCP Server |
@@ -494,7 +513,7 @@ dab start --mcp-stdio --config ./dab-config.json
 
 ---
 
-# PHẦN L — AI-SAFE DYNAMIC SQL
+# PHẦN L — SQL ĐỘNG AN TOÀN KHI DÙNG VỚI AI
 
 Nguy hiểm:
 
@@ -521,9 +540,9 @@ EXEC sys.sp_executesql
 
 ---
 
-# PHẦN M — DECISION TABLE
+# PHẦN M — BẢNG CHỌN GIẢI PHÁP
 
-| Scenario | Đáp án ưu tiên |
+| Tình huống | Đáp án ưu tiên |
 |---|---|
 | Persistent rules toàn repo | `.github/copilot-instructions.md` |
 | Rules chỉ `*.sql` | `.github/instructions/*.instructions.md` |
@@ -541,7 +560,7 @@ EXEC sys.sp_executesql
 
 ---
 
-# PHẦN N — EXAM TRAPS
+# PHẦN N — BẪY THƯỜNG GẶP TRONG ĐỀ
 
 1. **Instruction ≠ permission.**
 2. **MCP ≠ database admin quyền cao.**
@@ -554,10 +573,10 @@ EXEC sys.sp_executesql
 
 ---
 
-# PHẦN O — MOCK QUESTIONS
+# PHẦN O — CÂU HỎI TỰ KIỂM TRA
 
 ### Q1
-Team muốn mọi code generated trong repo dùng schema-qualified names.  
+Nhóm muốn mọi mã do AI sinh trong kho mã nguồn đều ghi đầy đủ tên schema.  
 **Đáp án:** `.github/copilot-instructions.md`.
 
 ### Q2
@@ -601,12 +620,12 @@ Instruction nói “never delete” nhưng login có `DELETE`.
 **Đáp án:** chưa đủ; permission/tool scope mới enforce.
 
 ### Q12
-MCP cần chạy trong SSMS workflow nhiều bước.  
+MCP cần chạy trong quy trình nhiều bước của SSMS.  
 **Đáp án:** Agent mode.
 
 ---
 
-# PHẦN P — HANDS-ON CHECKLIST
+# PHẦN P — DANH SÁCH BÀI THỰC HÀNH
 
 - [ ] Giải thích model, Copilot client, MCP, DB permission.
 - [ ] Nêu 4 security risks.
@@ -624,11 +643,13 @@ MCP cần chạy trong SSMS workflow nhiều bước.
 - [ ] Cấu hình stdio MCP.
 - [ ] Nhớ 7 DML tools.
 - [ ] Sửa SQL Injection do AI sinh.
-- [ ] Trả lời 12 mock questions mà giải thích được vì sao phương án khác sai.
+- [ ] Trả lời 12 câu hỏi tự kiểm tra và giải thích được vì sao các phương án khác sai.
 
 ---
 
-# PHẦN Q — CHEAT SHEET
+# PHẦN Q — BẢNG GHI NHỚ NHANH
+
+Phần này chỉ tóm tắt mối quan hệ giữa các thành phần; hãy quay lại phần tương ứng nếu chưa giải thích được vì sao mỗi lựa chọn an toàn hoặc không an toàn.
 
 ```text
 Repo-wide rules         -> .github/copilot-instructions.md

@@ -1,10 +1,32 @@
-# DP-800 Domain 2: Optimize Database Performance
+# DP-800 Miền 2 — Tối ưu hiệu năng cơ sở dữ liệu
 
-> **Miền 2:** Secure, Optimize, and Deploy Database Solutions (35–40%)  
-> **Chủ đề:** Optimize Database Performance  
+> **Miền 2:** Bảo mật, tối ưu và triển khai giải pháp cơ sở dữ liệu (35–40%)  
+> **Chủ đề:** Cấu hình, transaction, execution plan, DMV, Query Store, blocking và deadlock  
 > **Cập nhật:** 09/08/2026  
 > **Blueprint áp dụng:** DP-800 — Skills measured as of March 12, 2026  
-> **Mục tiêu:** Hiểu nguyên nhân → đo bằng đúng công cụ → chọn biện pháp ít rủi ro nhất.
+> **Cập nhật cách trình bày:** 12/08/2026
+
+## Chương này giúp bạn xử lý tình huống nào?
+
+Người dùng báo “ứng dụng chậm” nhưng câu đó chưa cho biết nguyên nhân. Truy vấn có thể thiếu index, dùng execution plan không phù hợp, chờ khóa của session khác, bị deadlock, thiếu CPU/I/O hoặc chạy trên service tier không đáp ứng workload.
+
+Một SQL developer giỏi không sửa bằng cách đoán. Quy trình đúng là:
+
+```text
+Mô tả triệu chứng
+      ↓
+Đo tài nguyên và thời gian chờ
+      ↓
+Đọc execution plan / DMV / Query Store
+      ↓
+Xác định nguyên nhân có bằng chứng
+      ↓
+Chọn thay đổi nhỏ nhất đáp ứng yêu cầu
+      ↓
+Đo lại để xác nhận
+```
+
+Trong đề thi, các đáp án kiểu “tăng cấu hình ngay” hoặc “tạo thêm index ngay” thường là bẫy nếu chưa có bằng chứng. Chương này dạy bạn chọn đúng công cụ chẩn đoán trước khi chọn cách sửa.
 
 ---
 
@@ -12,10 +34,10 @@
 
 DP-800 yêu cầu:
 
-1. **Recommend database configurations**.
+1. Đề xuất cấu hình database phù hợp.
 2. Bảo toàn data integrity/consistency bằng **transaction isolation levels** và concurrency controls.
-3. Đánh giá hiệu năng bằng **execution plans, DMVs, Query Store, Query Performance Insight**.
-4. Xác định và xử lý **blocking và deadlocks**.
+3. Đánh giá hiệu năng bằng **execution plan, DMV, Query Store và Query Performance Insight**.
+4. Xác định và xử lý **blocking và deadlock**.
 
 **Nguồn chuẩn:**
 - [DP-800 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-800)
@@ -23,16 +45,16 @@ DP-800 yêu cầu:
 
 ---
 
-# PHẦN 1 — DATABASE CONFIGURATION
+# PHẦN 1 — CẤU HÌNH CƠ SỞ DỮ LIỆU
 
-## 1. Azure SQL purchasing/service tiers — phải biết để “recommend configuration”
+## 1. Mô hình tính phí và tầng dịch vụ của Azure SQL
 
 ### 1.1 DTU vs vCore
 
 - **DTU model:** gộp CPU/memory/I/O vào DTU; đơn giản nhưng ít tách bạch.
 - **vCore model:** chọn compute rõ hơn, phù hợp phần lớn thiết kế hiện đại và dễ map nhu cầu tài nguyên/licensing hơn.
 
-### 1.2 Service tiers theo vCore
+### 1.2 Các tầng dịch vụ theo vCore
 
 | Tier | Storage/HA hiện hành | Chọn khi |
 |---|---|---|
@@ -42,7 +64,7 @@ DP-800 yêu cầu:
 
 > **Cập nhật quan trọng:** Microsoft hiện mô tả Hyperscale là tier được khuyến nghị và mặc định cho các OLTP/HTAP workload mới hoặc đang hiện đại hóa. Tuy vậy, không chọn máy móc: General Purpose vẫn phù hợp khi ưu tiên chi phí; Business Critical phù hợp khi cần local-SSD latency/In-Memory OLTP. Các giới hạn còn phụ thuộc hardware/region/resource limit cụ thể.
 
-### 1.3 Provisioned vs Serverless
+### 1.3 Cấp sẵn tài nguyên và không máy chủ
 
 - **Provisioned:** compute luôn sẵn sàng; workload ổn định.
 - **Serverless:** auto-scale và tính compute theo mức sử dụng từng giây; phù hợp **single database** có workload gián đoạn, khó đoán và chịu được warm-up.
@@ -59,7 +81,7 @@ Tham khảo:
 
 ---
 
-## 2. MAXDOP, compatibility level, automatic tuning và ADR
+## 2. MAXDOP, mức tương thích, tự động tinh chỉnh và ADR
 
 ### 2.1 MAXDOP
 
@@ -86,7 +108,7 @@ GO
 
 Nguồn: [Configure MAXDOP in Azure SQL Database and Fabric SQL database](https://learn.microsoft.com/en-us/azure/azure-sql/database/configure-max-degree-of-parallelism?view=azuresql)
 
-### 2.2 Compatibility level
+### 2.2 Mức tương thích (compatibility level)
 
 Compatibility level mở/đóng nhiều optimizer behavior mới.
 
@@ -103,7 +125,7 @@ GO
 
 Với SQL Server/Azure SQL mới, compatibility level 170 gắn với các optimizer improvements mới. **Không nâng production chỉ để “lấy tính năng” mà không test regression.**
 
-### 2.3 Automatic tuning — Azure SQL
+### 2.3 Tự động tinh chỉnh — Azure SQL
 
 Các lựa chọn đáng nhớ:
 - `FORCE_LAST_GOOD_PLAN`
@@ -122,7 +144,7 @@ GO
 
 **Defaults/availability dễ nhầm:** Azure defaults cho server mới là `FORCE_LAST_GOOD_PLAN = ON`, còn `CREATE_INDEX` và `DROP_INDEX` là `OFF`. Azure SQL Managed Instance hiện chỉ hỗ trợ automatic tuning option **FORCE LAST GOOD PLAN**; đừng chọn auto-create/drop index cho MI. SQL database in Fabric lại tự bật `CREATE INDEX`.
 
-### 2.4 Optimize for ad hoc workloads
+### 2.4 Tối ưu cho truy vấn ít lặp lại (`optimize for ad hoc workloads`)
 
 Khi có quá nhiều one-off ad hoc plans:
 
@@ -140,9 +162,9 @@ Tham khảo: [Accelerated Database Recovery](https://learn.microsoft.com/en-us/s
 
 ---
 
-# PHẦN 2 — TRANSACTION ISOLATION & CONCURRENCY
+# PHẦN 2 — MỨC CÔ LẬP VÀ XỬ LÝ TRUY CẬP ĐỒNG THỜI
 
-## 3. Bảng anomaly cần thuộc
+## 3. Các hiện tượng đọc dữ liệu cần phân biệt
 
 | Isolation | Dirty read | Non-repeatable read | Phantom | Cơ chế dễ nhớ |
 |---|---:|---:|---:|---|
@@ -212,14 +234,14 @@ Tham khảo: [Optimized locking in Azure SQL Database](https://learn.microsoft.c
 
 ---
 
-# PHẦN 3 — EXECUTION PLANS
+# PHẦN 3 — KẾ HOẠCH THỰC THI
 
-## 4. Estimated vs Actual
+## 4. Kế hoạch ước tính và kế hoạch thực tế
 
 - **Estimated plan:** optimizer estimate; query không cần thực thi để lấy runtime metrics.
 - **Actual plan:** có runtime metrics sau khi chạy; dùng để so estimate vs actual.
 
-### Operator mindset
+### Cách đọc toán tử trong kế hoạch thực thi
 
 - **Index Seek** thường tốt khi chọn ít row, nhưng seek không tự động tốt nếu phải lookup hàng triệu lần.
 - **Scan** không tự động xấu; scan có thể là lựa chọn đúng khi cần phần lớn bảng hoặc columnstore scan.
@@ -227,7 +249,7 @@ Tham khảo: [Optimized locking in Azure SQL Database](https://learn.microsoft.c
 - **Sort/Hash spill** và warning → xem memory grant/cardinality.
 - Estimate lệch xa actual → nghĩ đến statistics/cardinality/parameter sensitivity.
 
-### Covering index example
+### Ví dụ chỉ mục bao phủ (covering index)
 
 ```sql
 CREATE INDEX IX_Orders_Customer_OrderDate
@@ -244,7 +266,9 @@ Tham khảo: [Display and save execution plans](https://learn.microsoft.com/en-u
 
 # PHẦN 4 — DMVs
 
-## 5. Truy vấn đang chạy và blocking chain
+## 5. Truy vấn đang chạy và chuỗi chặn
+
+Truy vấn DMV sau giúp xác định session nào đang chạy, session nào đang chặn nó và câu SQL liên quan. Hãy dùng để thu thập bằng chứng trước khi kết thúc một session.
 
 ```sql
 SELECT
@@ -263,7 +287,9 @@ ORDER BY r.blocking_session_id DESC, r.session_id;
 GO
 ```
 
-### Top cached queries theo CPU trung bình
+### Các truy vấn trong bộ nhớ đệm dùng nhiều CPU trung bình
+
+Ví dụ tổng hợp thống kê từ plan cache để tìm những câu lệnh có CPU trung bình cao. Kết quả là điểm bắt đầu điều tra, không phải bằng chứng duy nhất để sửa query.
 
 ```sql
 SELECT TOP (20)
@@ -291,7 +317,7 @@ ORDER BY avg_cpu DESC;
 GO
 ```
 
-### Locks
+### Các khóa đang giữ
 
 ```sql
 SELECT *
@@ -303,7 +329,7 @@ GO
 
 ---
 
-# PHẦN 5 — QUERY STORE & QUERY PERFORMANCE INSIGHT
+# PHẦN 5 — QUERY STORE VÀ QUERY PERFORMANCE INSIGHT
 
 ## 6. Query Store
 
@@ -314,9 +340,9 @@ Query Store lưu:
 - wait statistics (nếu capture),
 - lịch sử theo thời gian.
 
-### Enable/configure trên USER DATABASE
+### Bật và cấu hình trên cơ sở dữ liệu người dùng
 
-> Không dùng `tempdb` làm lab Query Store.
+> Không dùng `tempdb` để thực hành Query Store.
 
 ```sql
 ALTER DATABASE YourDatabase
@@ -336,7 +362,9 @@ SET QUERY_STORE
 GO
 ```
 
-### Force/unforce plan
+### Buộc dùng hoặc bỏ buộc một kế hoạch
+
+Các lệnh sau cố định một plan tốt đã biết để xử lý plan regression, rồi bỏ cố định khi không còn cần thiết.
 
 ```sql
 EXEC sys.sp_query_store_force_plan
@@ -350,7 +378,7 @@ EXEC sys.sp_query_store_unforce_plan
 GO
 ```
 
-### Query Store hints — sửa behavior mà không đổi source code
+### Query Store hints — đổi cách thực thi mà không sửa mã nguồn
 
 ```sql
 EXEC sys.sp_query_store_set_hints
@@ -389,9 +417,9 @@ Tham khảo: [Query Performance Insight](https://learn.microsoft.com/en-us/azure
 
 ---
 
-# PHẦN 6 — PARAMETER SENSITIVITY
+# PHẦN 6 — ĐỘ NHẠY THAM SỐ
 
-## 8. Parameter sniffing / Parameter Sensitive Plan (PSP)
+## 8. Đánh hơi tham số và Parameter Sensitive Plan (PSP)
 
 Classic parameter sniffing:
 1. SP compile với parameter A.
@@ -400,6 +428,8 @@ Classic parameter sniffing:
 4. Reuse plan A → chậm.
 
 ### Các lựa chọn
+
+Bảng và đoạn lệnh ở phần này minh họa nhiều cách xử lý độ nhạy tham số. Mỗi cách có đánh đổi; không nên mặc định dùng `RECOMPILE` cho mọi procedure.
 
 ```sql
 -- Chỉ statement này compile lại mỗi lần
@@ -415,7 +445,7 @@ GO
 OPTION (OPTIMIZE FOR (@CustomerId = 100));
 ```
 
-Hoặc **Query Store Hint** nếu không sửa code.
+Hoặc dùng **Query Store Hint** nếu không thể sửa mã nguồn.
 
 **PSP Optimization** (compatibility level phù hợp, SQL Server 2022+) có thể tạo nhiều plan variants cho parameter-sensitive equality predicates thay vì ép một plan cho mọi distribution.
 
@@ -425,13 +455,13 @@ Tham khảo: [Parameter Sensitive Plan optimization](https://learn.microsoft.com
 
 ---
 
-# PHẦN 7 — BLOCKING & DEADLOCKS
+# PHẦN 7 — CHẶN LẪN NHAU VÀ BẾ TẮC
 
-## 9. Blocking
+## 9. Chặn lẫn nhau (Blocking)
 
 Blocking không đồng nghĩa với bug; lock chờ là phần bình thường của concurrency. Vấn đề là **blocking kéo dài / chain lớn / head blocker không hợp lý**.
 
-### Checklist xử lý
+### Các bước xử lý
 
 1. Tìm `blocking_session_id`.
 2. Xác định head blocker.
@@ -462,7 +492,7 @@ GO
 
 ---
 
-## 10. Deadlocks
+## 10. Bế tắc (Deadlock)
 
 Deadlock = cycle:
 - T1 giữ A, chờ B.
@@ -471,7 +501,7 @@ Deadlock = cycle:
 
 ### Cách giảm
 
-- Các code path truy cập object theo **cùng thứ tự**.
+- Các nhánh xử lý truy cập đối tượng theo **cùng một thứ tự**.
 - Transaction ngắn.
 - Index tốt để giảm rows/locks.
 - Retry ở application cho lỗi 1205.
@@ -508,12 +538,12 @@ Tham khảo: [Deadlocks guide](https://learn.microsoft.com/en-us/sql/relational-
 
 ---
 
-# PHẦN 8 — DECISION TABLE ĐI THI
+# PHẦN 8 — BẢNG CHỌN GIẢI PHÁP
 
-| Scenario | Công cụ/giải pháp đầu tiên nên nghĩ |
+| Tình huống | Công cụ/giải pháp đầu tiên nên nghĩ tới |
 |---|---|
 | Query regression sau deployment | Query Store, compare plans, last good plan |
-| Không sửa app code nhưng cần hint | Query Store Hints |
+| Không sửa được mã ứng dụng nhưng cần thêm gợi ý cho bộ tối ưu | Query Store Hints |
 | Reader block writer, dirty read bị cấm | RCSI |
 | Writer block writer | RCSI không đủ; tối ưu transaction/index/concurrency |
 | Top queries trong Azure Portal | Query Performance Insight |
@@ -527,7 +557,7 @@ Tham khảo: [Deadlocks guide](https://learn.microsoft.com/en-us/sql/relational-
 
 ---
 
-# PHẦN 9 — MOCK QUESTIONS
+# PHẦN 9 — CÂU HỎI TỰ KIỂM TRA
 
 ### Câu 1
 Reporting `SELECT` block OLTP `UPDATE`, nhưng compliance cấm dirty reads. Chọn?
@@ -540,7 +570,7 @@ Sau khi bật RCSI, hai transaction cùng update một Order vẫn block. Có ph
 **Đáp án:** Không. Writer–writer blocking vẫn có thể xảy ra.
 
 ### Câu 3
-Bạn không sửa được application code nhưng muốn `OPTION(RECOMPILE)` cho query đã có trong Query Store.
+Bạn không sửa được mã ứng dụng nhưng muốn thêm `OPTION(RECOMPILE)` cho truy vấn đã có trong Query Store.
 
 **Đáp án:** `sys.sp_query_store_set_hints` với `@query_hints`.
 
@@ -571,7 +601,7 @@ Workload intermittent, có thời gian dài idle và muốn giảm compute cost 
 
 ---
 
-# PHẦN 10 — CHECKLIST “EXAM READY”
+# PHẦN 10 — DANH SÁCH TỰ KIỂM TRA
 
 - [ ] Phân biệt DTU/vCore, General Purpose/Business Critical/Hyperscale.
 - [ ] Phân biệt provisioned/serverless.
@@ -586,7 +616,7 @@ Workload intermittent, có thời gian dài idle và muốn giảm compute cost 
 - [ ] Biết Query Performance Insight dùng khi nào.
 - [ ] Giải thích parameter sniffing/PSP.
 - [ ] Capture và xử lý deadlock.
-- [ ] Biết automatic tuning/ADR/optimized locking ở mức chọn scenario.
+- [ ] Biết chọn đúng tình huống cho automatic tuning, ADR và optimized locking.
 
 ---
 

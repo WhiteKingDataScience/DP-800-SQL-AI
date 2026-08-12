@@ -1,10 +1,32 @@
-# DP-800 Domain 2: Implement CI/CD by Using SQL Database Projects
+# DP-800 Miền 2 — CI/CD với SQL Database Projects
 
-> **Miền 2:** Secure, Optimize, and Deploy Database Solutions (35–40%)  
-> **Chủ đề:** Implement CI/CD by Using SQL Database Projects  
+> **Miền 2:** Bảo mật, tối ưu và triển khai giải pháp cơ sở dữ liệu (35–40%)  
+> **Chủ đề:** Quản lý schema bằng Git, build DACPAC, kiểm thử và triển khai qua pipeline  
 > **Cập nhật:** 09/08/2026  
 > **Blueprint áp dụng:** DP-800 — Skills measured as of March 12, 2026  
-> **Mục tiêu:** Biến database schema thành source-controlled artifact có thể build, test, review và deploy lặp lại.
+> **Cập nhật cách trình bày:** 12/08/2026
+
+## Vì sao cơ sở dữ liệu cũng cần CI/CD?
+
+Nếu một DBA sửa trực tiếp bảng ở môi trường thật bằng SSMS nhưng không lưu thay đổi vào Git, nhóm phát triển sẽ không biết lược đồ thật đang khác mã nguồn ở điểm nào. Lần triển khai sau có thể ghi đè thay đổi, làm mất dữ liệu hoặc khiến ứng dụng và cơ sở dữ liệu không còn tương thích.
+
+SQL Database Project giải quyết vấn đề đó bằng cách coi lược đồ như mã nguồn:
+
+```text
+Developer sửa file .sql trong branch
+        ↓
+Pull request để người khác xem lại
+        ↓
+Pipeline build và kiểm tra database model
+        ↓
+Tạo một file .dacpac đã được kiểm chứng
+        ↓
+Xem trước thay đổi và chặn thay đổi nguy hiểm
+        ↓
+Phê duyệt rồi mới triển khai vào database đích
+```
+
+Chương này không yêu cầu bạn trở thành chuyên gia DevOps. Bạn cần hiểu nguồn chuẩn nằm ở đâu, mỗi bước bảo vệ hệ thống khỏi lỗi gì, và vì sao không được lưu password hoặc sửa schema production tùy ý.
 
 ---
 
@@ -12,15 +34,15 @@
 
 DP-800 yêu cầu:
 
-- Testing strategy: **unit tests + integration tests**.
-- Reference/static data trong source control.
+- Chiến lược kiểm thử: **unit test và integration test**.
+- Dữ liệu tham chiếu/tĩnh trong Git.
 - SQL Database Projects, gồm **SDK-style models**.
-- Source control.
-- Branching, pull requests, conflict resolution.
-- Secrets management.
-- Schema drift detection.
-- Update project và deploy changes.
-- Deployment pipeline controls: branch policies, approvals/triggers, authentication, code owners.
+- Quản lý mã nguồn.
+- Branch, pull request và xử lý xung đột.
+- Quản lý bí mật.
+- Phát hiện schema drift — sai khác giữa schema thật và schema được quản lý.
+- Cập nhật project và triển khai thay đổi.
+- Kiểm soát quy trình: chính sách nhánh, phê duyệt, điều kiện kích hoạt, xác thực và người chịu trách nhiệm mã nguồn.
 
 **Nguồn chuẩn:**
 - [DP-800 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-800)
@@ -28,29 +50,29 @@ DP-800 yêu cầu:
 
 ---
 
-# PHẦN 1 — SQL DATABASE PROJECT MENTAL MODEL
+# PHẦN 1 — CÁCH HÌNH DUNG MỘT SQL DATABASE PROJECT
 
-## 1. Declarative model
+## 1. Mô hình khai báo trạng thái mong muốn
 
 SQL project mô tả **trạng thái mong muốn** của database schema.
 
 ```text
-.sql files trong Git
-      ↓ dotnet build
-Database model validation
+.sql trong Git
+      ↓ build bằng dotnet
+Kiểm tra database model
       ↓
 .dacpac
-      ↓ SqlPackage / deployment task
-Target database
+      ↓ SqlPackage / tác vụ triển khai
+Database đích
 ```
 
-**Source of truth** nên là source control + project artifact, không phải các thay đổi ad-hoc trên production.
+**Nguồn chuẩn duy nhất** nên là mã trong Git và gói kết quả do quy trình CI/CD tạo ra, không phải các thay đổi tùy ý trên môi trường thật.
 
 ---
 
 ## 2. SDK-style `Microsoft.Build.Sql`
 
-### 2.1 Vì sao exam quan tâm?
+### 2.1 Vì sao kỳ thi quan tâm?
 
 SDK-style project:
 - cross-platform với modern .NET tooling,
@@ -74,11 +96,11 @@ Tính đến 09/08/2026, bản GA hiện hành của package Microsoft-owned **M
 
 > Package version sẽ tiếp tục thay đổi; trong đời thực hãy kiểm tra NuGet/release hiện hành. Trong exam, trọng tâm là **SDK-style + Microsoft.Build.Sql + dotnet build + dacpac**, không phải thuộc số version.
 
-### 2.3 Tooling nuance cập nhật 2026
+### 2.3 Điểm khác biệt giữa các công cụ — cập nhật 2026
 
-- SDK-style `Microsoft.Build.Sql` là định dạng được ưu tiên cho command line/VS Code và là hướng phát triển hiện đại.
-- Current Microsoft docs lưu ý **Visual Studio 2026 chỉ hỗ trợ original SQL project format**; SDK-style trong Visual Studio 2022 vẫn là component preview, trong khi VS Code hỗ trợ SDK-style tốt hơn.
-- Trong kỳ thi, nếu câu hỏi hỏi **model/project format** hãy dựa vào requirement, không suy luận rằng mọi IDE đều hỗ trợ SDK-style giống nhau.
+- Kiểu SDK `Microsoft.Build.Sql` là định dạng được ưu tiên cho dòng lệnh/VS Code và là hướng phát triển hiện đại.
+- Tài liệu Microsoft hiện hành lưu ý **Visual Studio 2026 chỉ hỗ trợ định dạng SQL project nguyên bản**; kiểu SDK trong Visual Studio 2022 vẫn là thành phần Preview, trong khi VS Code hỗ trợ kiểu SDK tốt hơn.
+- Trong kỳ thi, nếu câu hỏi hỏi **mô hình/định dạng project** hãy dựa vào yêu cầu, không suy luận rằng mọi IDE đều hỗ trợ kiểu SDK giống nhau.
 
 Tham khảo:
 - [SQL Database Projects](https://learn.microsoft.com/en-us/sql/tools/sql-database-projects/sql-database-projects?view=sql-server-ver17)
@@ -87,9 +109,9 @@ Tham khảo:
 
 ---
 
-# PHẦN 2 — CREATE, BUILD, VALIDATE
+# PHẦN 2 — TẠO, BIÊN DỊCH VÀ KIỂM TRA PROJECT
 
-## 3. CLI workflow
+## 3. Quy trình dòng lệnh
 
 Cài template nếu môi trường chưa có:
 
@@ -124,7 +146,7 @@ dotnet build
 
 Kết quả quan trọng: `.dacpac`.
 
-### Build validation bắt được gì?
+### Bước biên dịch phát hiện được lỗi gì?
 
 - syntax/model errors,
 - unresolved/broken object references trong phạm vi model,
@@ -134,13 +156,13 @@ Kết quả quan trọng: `.dacpac`.
 
 ---
 
-# PHẦN 3 — PRE/POST-DEPLOYMENT & REFERENCE DATA
+# PHẦN 3 — SCRIPT TRƯỚC/SAU TRIỂN KHAI VÀ DỮ LIỆU THAM CHIẾU
 
-## 4. Reference/static data
+## 4. Dữ liệu tham chiếu hoặc dữ liệu tĩnh
 
 DACPAC chủ yếu mô tả schema model. Lookup/reference rows thường được quản lý bằng **post-deployment script** để deployment idempotent.
 
-### 4.1 Project file
+### 4.1 File project
 
 ```xml
 <ItemGroup>
@@ -159,7 +181,7 @@ Chỉ có một entry point post-deploy; file đó có thể include file con b�
 
 Các script được `:r` nên được loại khỏi normal model build nếu project globbing bắt chúng như object scripts.
 
-### 4.2 Idempotent reference data bằng `MERGE`
+### 4.2 Nạp dữ liệu tham chiếu theo cách chạy lại vẫn an toàn bằng `MERGE`
 
 ```sql
 PRINT N'Đồng bộ dbo.OrderStatus';
@@ -190,17 +212,17 @@ Tham khảo: [Pre/post-deployment scripts](https://learn.microsoft.com/en-us/sql
 
 ---
 
-# PHẦN 4 — TESTING STRATEGY
+# PHẦN 4 — CHIẾN LƯỢC KIỂM THỬ
 
-## 5. Ba tầng test
+## 5. Ba tầng kiểm thử
 
 | Tầng | Mục tiêu | Ví dụ |
 |---|---|---|
 | Build validation | schema compile/resolve được | `dotnet build` |
 | Unit test | một SP/function trả đúng cho input xác định | test `usp_CalculateTax` |
-| Integration test | nhiều object/workflow phối hợp đúng | deploy DB test rồi chạy order flow |
+| Integration test | nhiều đối tượng và bước xử lý phối hợp đúng | triển khai database test rồi chạy luồng tạo đơn hàng |
 
-### 5.1 Unit test pattern
+### 5.1 Mẫu kiểm thử đơn vị
 
 ```text
 Arrange / Pre-test
@@ -252,9 +274,9 @@ Tham khảo: [Design and implement a testing strategy — Microsoft Learn](https
 
 ---
 
-# PHẦN 5 — SOURCE CONTROL, BRANCH, PR, CONFLICTS
+# PHẦN 5 — GIT, NHÁNH, PULL REQUEST VÀ XUNG ĐỘT
 
-## 6. Workflow khuyến nghị
+## 6. Quy trình khuyến nghị
 
 ```text
 main
@@ -281,9 +303,9 @@ feature/order-discount
 
 ---
 
-# PHẦN 6 — SCHEMA DRIFT: PHẦN DỄ HỌC SAI NHẤT
+# PHẦN 6 — SAI LỆCH LƯỢC ĐỒ (SCHEMA DRIFT): PHẦN DỄ HỌC SAI NHẤT
 
-## 7. Schema drift là gì?
+## 7. Sai lệch lược đồ là gì?
 
 Live database khác source-controlled desired schema vì:
 - hotfix trực tiếp,
@@ -295,9 +317,9 @@ Live database khác source-controlled desired schema vì:
 
 ### A. Schema Compare
 
-So sánh project/dacpac/database và xem differences. Phù hợp để phát hiện/sync drift trong development/admin workflow.
+So sánh project, DACPAC và database để xem điểm khác nhau. Cách này phù hợp để phát hiện hoặc đồng bộ sai lệch schema trong quá trình phát triển và quản trị.
 
-### B. Extract model rồi so Git — generic drift workflow
+### B. Trích xuất model rồi so với Git — quy trình phát hiện sai lệch tổng quát
 
 Bạn có thể extract current database schema thành model/project rồi dùng Git diff/status để thấy thay đổi.
 
@@ -310,7 +332,7 @@ sqlpackage \
   /TargetFile:"CurrentDatabase.dacpac"
 ```
 
-Sau đó compare model/dacpac bằng tooling phù hợp hoặc extract project form theo workflow Microsoft Learn.
+Sau đó so sánh model/DACPAC bằng công cụ phù hợp hoặc trích xuất thành project theo hướng dẫn Microsoft Learn.
 
 ### C. `/Action:DriftReport` — **registered DAC**
 
@@ -327,13 +349,13 @@ sqlpackage \
 
 > Nếu database không ở mô hình registered DAC phù hợp, hãy nghĩ đến Schema Compare / Extract + compare thay vì ép `DriftReport`.
 
-### 7.2 Deploy preview ≠ Drift
+### 7.2 Xem trước triển khai không phải báo cáo sai lệch
 
 - `/Action:Script`: sinh deployment script.
 - `/Action:DeployReport`: mô tả changes sẽ được deployment thực hiện.
 - `/Action:Publish`: thực sự deploy.
 
-**Exam trap:**
+**Bẫy thường gặp trong đề:**
 - “What *would change* if dacpac is deployed?” → `DeployReport`/`Script`.
 - “What changed ad hoc on a registered DAC?” → `DriftReport`.
 - “Generic source vs live drift” → Schema Compare / extract+source comparison.
@@ -345,9 +367,9 @@ Tham khảo:
 
 ---
 
-# PHẦN 7 — DEPLOYMENT
+# PHẦN 7 — TRIỂN KHAI
 
-## 8. Install SqlPackage
+## 8. Cài SqlPackage
 
 ```bash
 dotnet tool install --global microsoft.sqlpackage
@@ -359,7 +381,9 @@ Update:
 dotnet tool update --global microsoft.sqlpackage
 ```
 
-### Preview deployment
+### Xem trước thay đổi sẽ triển khai
+
+Bước này tạo báo cáo triển khai hoặc script xem trước để nhóm biết chính xác schema sẽ thay đổi ra sao trước khi publish vào database đích.
 
 ```bash
 sqlpackage \
@@ -369,7 +393,7 @@ sqlpackage \
   /OutputPath:"deploy-report.xml"
 ```
 
-### Publish
+### Thực hiện triển khai
 
 ```bash
 sqlpackage \
@@ -382,7 +406,7 @@ sqlpackage \
 
 ---
 
-# PHẦN 8 — SECRETS & PASSWORDLESS CI/CD
+# PHẦN 8 — QUẢN LÝ BÍ MẬT VÀ CI/CD KHÔNG DÙNG MẬT KHẨU
 
 ## 9. Thứ tự ưu tiên
 
@@ -407,9 +431,9 @@ Tham khảo: [GitHub Actions OIDC with Azure](https://learn.microsoft.com/en-us/
 
 ---
 
-# PHẦN 9 — PIPELINE HOÀN CHỈNH
+# PHẦN 9 — QUY TRÌNH CI/CD HOÀN CHỈNH
 
-## 10. GitHub Actions: build một lần, deploy artifact
+## 10. GitHub Actions: biên dịch một lần, triển khai cùng một gói kết quả
 
 ```yaml
 name: SQL Project CI-CD
@@ -502,7 +526,7 @@ jobs:
             /p:BlockOnPossibleDataLoss=True
 ```
 
-> Workflow này minh họa hướng **passwordless**: `azure/login` dùng OIDC và SqlPackage dùng Entra authentication. `id-token: write` chỉ cấp cho deploy job, không cấp thừa cho pull-request build. `concurrency` tránh hai schema deployments vào production chạy chồng nhau. Deployment principal/service principal phải được tạo trong target database và chỉ được cấp quyền deployment cần thiết. Nếu môi trường/tooling cụ thể không hỗ trợ luồng này, dùng environment secret/Key Vault thay vì hardcode credential.
+> Quy trình này minh họa cách **không dùng mật khẩu**: `azure/login` dùng OIDC và SqlPackage dùng xác thực Entra. Chỉ cấp `id-token: write` cho job triển khai, không cấp thừa cho job build của pull request. `concurrency` ngăn hai lần triển khai schema vào production chạy chồng nhau. Danh tính triển khai phải được tạo trong database đích và chỉ nhận các quyền cần thiết. Nếu công cụ cụ thể chưa hỗ trợ luồng này, dùng environment secret hoặc Key Vault thay vì ghi cứng credential.
 
 > **Approval nuance:** GitHub environment approval diễn ra trước khi toàn bộ deploy job chạy. Nếu policy bắt buộc con người xem `DeployReport` rồi mới cho `Publish`, hãy tách preview và publish thành **hai jobs/environments**; publish job `needs` preview và có required reviewers. Chỉ đặt hai steps liên tiếp trong cùng một job không tạo ra approval gate ở giữa.
 
@@ -510,9 +534,9 @@ Microsoft Learn cũng nêu `azure/sql-action` cho GitHub Actions và `SqlAzureDa
 
 ---
 
-# PHẦN 10 — DEPLOYMENT CONTROLS
+# PHẦN 10 — CÁC ĐIỂM KIỂM SOÁT KHI TRIỂN KHAI
 
-## 11. Controls cần nhận diện
+## 11. Các điểm kiểm soát cần nhận diện
 
 - Required PR reviewers.
 - Build validation.
@@ -528,9 +552,9 @@ Microsoft Learn cũng nêu `azure/sql-action` cho GitHub Actions và `SqlAzureDa
 
 ---
 
-# PHẦN 11 — DECISION TABLE ĐI THI
+# PHẦN 11 — BẢNG CHỌN GIẢI PHÁP
 
-| Scenario | Chọn |
+| Tình huống | Chọn |
 |---|---|
 | Tạo modern cross-platform SQL project | SDK-style `Microsoft.Build.Sql` |
 | File `.sql` mới tự vào model | default globbing |
@@ -544,12 +568,12 @@ Microsoft Learn cũng nêu `azure/sql-action` cho GitHub Actions và `SqlAzureDa
 | Secretless GitHub→Azure | OIDC/federated identity |
 | DBA bắt buộc review SQL PR | CODEOWNERS + required reviewers |
 | SP compile được nhưng logic có thể sai | unit test |
-| Workflow nhiều object | integration test |
+| Quy trình có nhiều đối tượng phối hợp | integration test |
 | Production approval | environment/gate/reviewer controls |
 
 ---
 
-# PHẦN 12 — MOCK QUESTIONS
+# PHẦN 12 — CÂU HỎI TỰ KIỂM TRA
 
 ### Câu 1
 Build `.sqlproj` thành công. Có chứng minh stored procedure tính đúng thuế không?
@@ -559,12 +583,12 @@ Build `.sqlproj` thành công. Có chứng minh stored procedure tính đúng th
 ### Câu 2
 Bạn muốn xem deployment sẽ thay đổi production object nào nhưng không thay DB.
 
-**Đáp án:** `DeployReport` hoặc `Script` tùy output requirement.
+**Đáp án:** `DeployReport` hoặc `Script`, tùy yêu cầu về đầu ra.
 
 ### Câu 3
 Lead DBA nói “DriftReport phải so Git repo với bất kỳ live DB nào”. Phát biểu này đúng?
 
-**Đáp án:** Không hoàn toàn. `DriftReport` gắn với registered DAC. Generic source/live drift nên dùng Schema Compare hoặc extract/compare workflow.
+**Đáp án:** Không hoàn toàn. `DriftReport` gắn với registered DAC. Khi cần so schema trong Git với database thật theo cách tổng quát, dùng Schema Compare hoặc quy trình trích xuất rồi so sánh.
 
 ### Câu 4
 Project thêm file `Tables/NewTable.sql`, không sửa `.sqlproj`, vẫn build vào model. Tính năng?
@@ -588,7 +612,7 @@ Cần seed `CurrencyCodes` lặp lại nhiều lần mà không duplicate.
 
 ---
 
-# PHẦN 13 — CHECKLIST “EXAM READY”
+# PHẦN 13 — DANH SÁCH TỰ KIỂM TRA
 
 - [ ] Tự tạo SDK-style `.sqlproj`.
 - [ ] `dotnet build` và biết `.dacpac` là gì.

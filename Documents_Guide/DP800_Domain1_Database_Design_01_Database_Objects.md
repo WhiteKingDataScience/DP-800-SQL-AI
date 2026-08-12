@@ -1,38 +1,61 @@
-# DP-800 Domain 1: Design and Implement Database Objects
+# DP-800 Miền 1 — Thiết kế các đối tượng trong cơ sở dữ liệu
 
-> **Domain:** Design and develop database solutions (35–40%)  
-> **Skill:** Design and implement database objects  
+> **Miền:** Thiết kế và phát triển giải pháp cơ sở dữ liệu (35–40%)  
+> **Kỹ năng:** Thiết kế và triển khai các đối tượng trong database  
 > **Ưu tiên cá nhân:** Đây là **Top 3 skill cần cải thiện** theo score report của bạn.  
-> **Cập nhật:** 09/08/2026 — đối chiếu blueprint DP-800 và Microsoft Learn hiện hành.
+> **Cập nhật cách trình bày:** 12/08/2026 — đối chiếu Study Guide DP-800 và Microsoft Learn hiện hành.
+
+## Vì sao phải học chương này?
+
+Mọi ứng dụng SQL đều bắt đầu bằng cách lưu dữ liệu. Nếu chọn sai kiểu dữ liệu, khóa hoặc chỉ mục ngay từ đầu, hậu quả sẽ xuất hiện về sau: dữ liệu sai vẫn được ghi vào, truy vấn càng ngày càng chậm, bảng khó mở rộng và việc sửa schema trở nên tốn kém.
+
+Hãy lấy hệ thống bán hàng làm ví dụ:
+
+- `Customer` lưu khách hàng;
+- `SalesOrder` lưu đơn hàng;
+- `SalesOrderLine` lưu các sản phẩm thuộc từng đơn;
+- `Product` lưu sản phẩm.
+
+Chương này giúp bạn trả lời các câu hỏi như: dùng `INT` hay `BIGINT` cho mã đơn hàng, dùng rowstore hay columnstore, lưu lịch sử thay đổi bằng temporal table hay ledger, khi nào cần JSON, và làm sao chia một bảng lớn thành nhiều partition.
+
+### Cách đọc các ví dụ lệnh
+
+Mỗi khi gặp một khối T-SQL, đừng chỉ nhìn tên câu lệnh. Hãy xác định:
+
+1. **Bài toán:** hệ thống đang cần giải quyết việc gì?
+2. **Đối tượng:** đoạn lệnh tạo hoặc thay đổi bảng, chỉ mục, ràng buộc hay sequence nào?
+3. **Điều kiện bắt buộc:** tính năng cần khóa, kiểu dữ liệu, filegroup hoặc platform nào?
+4. **Kết quả:** sau khi chạy, dữ liệu hoặc execution plan thay đổi ra sao?
+5. **Quyết định:** tình huống nào nên dùng và tình huống nào không nên dùng giải pháp này?
 
 ## Mục tiêu sau khi học xong
 
 Bạn phải làm được cả ba việc:
 
-1. **Nhận diện requirement** và chọn đúng object/index/table type.
+1. **Nhận diện yêu cầu** và chọn đúng loại đối tượng, bảng hoặc chỉ mục.
 2. **Viết được cú pháp T-SQL cốt lõi** mà không cần nhìn tài liệu.
-3. **Giải thích vì sao các lựa chọn còn lại sai** trong câu hỏi scenario.
+3. **Giải thích vì sao các lựa chọn còn lại sai** trong câu hỏi tình huống.
 
-Blueprint chính thức yêu cầu:
+Study Guide chính thức yêu cầu bạn có thể:
 
-- Design and implement tables, including data types, size, columns, indexes, and columnstore indexes.
-- Design and implement specialized tables: in-memory, temporal, external, ledger, graph.
-- Design and implement JSON columns and indexes.
-- Design and implement PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK, DEFAULT.
-- Design and implement SEQUENCES.
-- Design and implement partitioning for tables and indexes.
+- thiết kế bảng, kiểu dữ liệu, kích thước cột, rowstore index và columnstore index;
+- chọn và tạo bảng in-memory, temporal, external, ledger hoặc graph;
+- thiết kế cột JSON và chỉ mục JSON;
+- dùng đúng `PRIMARY KEY`, `FOREIGN KEY`, `UNIQUE`, `CHECK`, `DEFAULT`;
+- tạo và sử dụng `SEQUENCE`;
+- phân vùng bảng và chỉ mục.
 
 Nguồn: [DP-800 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-800)
 
 ---
 
-# PHẦN 1 — TABLE DESIGN, DATA TYPES VÀ ROWSTORE INDEXES
+# PHẦN 1 — THIẾT KẾ BẢNG, KIỂU DỮ LIỆU VÀ CHỈ MỤC ROWSTORE
 
-## 1.1 Chọn data type đúng
+## 1.1 Chọn kiểu dữ liệu đúng
 
-Nguyên tắc: chọn **kiểu nhỏ nhất nhưng vẫn đúng semantics và đủ range**.
+Nguyên tắc: chọn **kiểu nhỏ nhất nhưng vẫn biểu diễn đúng ý nghĩa và đủ miền giá trị**. Kiểu dữ liệu không chỉ quyết định dữ liệu được phép lưu; nó còn ảnh hưởng kích thước mỗi dòng, độ rộng chỉ mục, bộ nhớ và tốc độ so sánh.
 
-### Integer
+### Số nguyên
 
 | Type | Range / Ghi nhớ |
 |---|---|
@@ -43,7 +66,7 @@ Nguyên tắc: chọn **kiểu nhỏ nhất nhưng vẫn đúng semantics và đ
 
 Không dùng `BIGINT` chỉ “cho chắc” nếu bảng rất lớn và column đó xuất hiện trong nhiều index: key lớn làm index rộng hơn.
 
-### Decimal / money
+### Số thập phân và tiền tệ
 
 Ưu tiên `DECIMAL(p,s)` khi cần độ chính xác xác định, ví dụ tiền:
 
@@ -53,13 +76,13 @@ Amount DECIMAL(19,4)
 
 Không dùng `FLOAT` cho giá trị tài chính cần so sánh/chính xác tuyệt đối vì `FLOAT` là approximate numeric.
 
-### Character
+### Chuỗi ký tự
 
 - `VARCHAR(n)`: dữ liệu non-Unicode.
 - `NVARCHAR(n)`: Unicode.
 - `VARCHAR(MAX)`/`NVARCHAR(MAX)`: chỉ dùng khi thực sự cần LOB; tránh mặc định dùng `MAX`.
 
-### Date/time
+### Ngày và thời gian
 
 - `DATE`: chỉ ngày.
 - `TIME`: chỉ thời gian.
@@ -80,7 +103,7 @@ WHERE MiddleName IS NULL;
 
 ---
 
-## 1.2 Computed column
+## 1.2 Cột được tính toán (computed column)
 
 ```sql
 CREATE TABLE dbo.OrderLine
@@ -101,7 +124,7 @@ ON dbo.OrderLine(TotalAmount);
 
 ---
 
-## 1.3 Sparse column
+## 1.3 Cột thưa (sparse column)
 
 Sparse column tối ưu storage cho cột có tỷ lệ `NULL` cao, nhưng có overhead đối với non-null values. Không dùng chỉ vì “có NULL”.
 
@@ -116,7 +139,7 @@ CREATE TABLE dbo.CustomerOptional
 
 ---
 
-## 1.4 Clustered vs nonclustered rowstore index
+## 1.4 So sánh clustered index và nonclustered index
 
 ### Clustered index
 
@@ -132,12 +155,16 @@ ON dbo.Orders(OrderDate, OrderId);
 
 ### Nonclustered index
 
+Ví dụ tạo một B-tree riêng theo `Email`. SQL Server có thể dùng index này để tìm khách hàng theo email mà không phải quét toàn bộ bảng.
+
 ```sql
 CREATE NONCLUSTERED INDEX IX_Orders_Customer_OrderDate
 ON dbo.Orders(CustomerId, OrderDate);
 ```
 
-### Covering index với INCLUDE
+### Chỉ mục bao phủ (covering index) với `INCLUDE`
+
+Ví dụ đặt các cột dùng để tìm kiếm trong phần khóa và các cột chỉ cần trả về trong `INCLUDE`, nhờ đó truy vấn có thể lấy đủ dữ liệu ngay từ index.
 
 ```sql
 CREATE NONCLUSTERED INDEX IX_Orders_Customer_OrderDate
@@ -145,7 +172,9 @@ ON dbo.Orders(CustomerId, OrderDate)
 INCLUDE (Status, TotalAmount);
 ```
 
-### Filtered index
+### Chỉ mục có điều kiện lọc (filtered index)
+
+Ví dụ chỉ lập chỉ mục cho các đơn hàng đang mở. Index nhỏ hơn vì bỏ qua những dòng không bao giờ được truy vấn theo điều kiện này.
 
 ```sql
 CREATE NONCLUSTERED INDEX IX_Orders_Open
@@ -156,7 +185,7 @@ WHERE Status = 'Open';
 
 ---
 
-# PHẦN 2 — COLUMNSTORE INDEXES
+# PHẦN 2 — CHỈ MỤC COLUMNSTORE
 
 Nguồn:
 - [CREATE COLUMNSTORE INDEX](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-columnstore-index-transact-sql?view=sql-server-ver17)
@@ -173,6 +202,8 @@ Dấu hiệu mạnh:
 - Compression quan trọng.
 
 ### Clustered Columnstore Index — CCI
+
+CCI thay cách lưu toàn bộ bảng sang dạng cột, phù hợp với bảng phân tích lớn thường quét và tổng hợp nhiều dòng.
 
 ```sql
 CREATE TABLE dbo.FactSales
@@ -202,7 +233,7 @@ Cách nhớ:
 
 ---
 
-## 2.2 Rowgroup, segment, delta store, tuple mover
+## 2.2 Cách columnstore tổ chức dữ liệu: rowgroup, segment, delta store và tuple mover
 
 - **Compressed rowgroup**: dữ liệu đã columnar/compressed.
 - **Segment**: dữ liệu một column bên trong rowgroup.
@@ -223,7 +254,7 @@ ON dbo.FactSales
 ORDER (OrderDateKey, ProductKey);
 ```
 
-SQL Server 2025 hỗ trợ ordered NCCI trong các scenario tương ứng:
+SQL Server 2025 hỗ trợ NCCI có thứ tự trong các tình huống phù hợp:
 
 ```sql
 CREATE NONCLUSTERED COLUMNSTORE INDEX NCCI_Orders_Analytics
@@ -238,7 +269,7 @@ Bẫy:
 
 ---
 
-# PHẦN 3 — SPECIALIZED TABLES
+# PHẦN 3 — CÁC LOẠI BẢNG CHUYÊN BIỆT
 
 ## 3.1 In-Memory OLTP / Memory-Optimized Table
 
@@ -254,12 +285,14 @@ Nguồn:
 - Contention trở thành bottleneck.
 - Có đủ memory và platform hỗ trợ.
 
-### Durability
+### Mức độ bền vững dữ liệu
 
 - `SCHEMA_AND_DATA`: durable.
 - `SCHEMA_ONLY`: data không survive restart.
 
-### SQL Server on-prem: memory-optimized filegroup
+### SQL Server cài tại chỗ: filegroup cho bảng tối ưu bộ nhớ
+
+Trên SQL Server cài đặt tại chỗ, phải tạo filegroup và file phù hợp trước khi tạo bảng memory-optimized. Đây là bước chuẩn bị ở cấp database.
 
 ```sql
 CREATE DATABASE DP800_InMemory;
@@ -330,7 +363,7 @@ Nguồn:
 - [Create a system-versioned temporal table](https://learn.microsoft.com/en-us/sql/relational-databases/tables/creating-a-system-versioned-temporal-table?view=sql-server-ver17)
 - [Query temporal data](https://learn.microsoft.com/en-us/sql/relational-databases/tables/querying-data-in-a-system-versioned-temporal-table?view=sql-server-ver17)
 
-### Use case
+### Trường hợp sử dụng
 
 - Point-in-time reconstruction.
 - History tự động.
@@ -425,7 +458,7 @@ Nguồn:
 - [Updatable ledger tables](https://learn.microsoft.com/en-us/sql/relational-databases/security/ledger/ledger-how-to-updatable-ledger-tables?view=sql-server-ver17)
 - [Verify ledger](https://learn.microsoft.com/en-us/sql/relational-databases/security/ledger/ledger-verify-database?view=sql-server-ver17)
 
-### Keyword
+### Từ khóa nhận diện
 
 - tamper-evident
 - cryptographic digest
@@ -476,7 +509,7 @@ ORDER BY t.commit_time DESC;
 
 ---
 
-## 3.4 Graph Tables
+## 3.4 Bảng đồ thị (Graph Tables)
 
 Nguồn: [SQL Graph sample](https://learn.microsoft.com/en-us/sql/relational-databases/graphs/sql-graph-sample?view=sql-server-ver17)
 
@@ -538,7 +571,7 @@ Nhớ:
 
 ---
 
-## 3.5 External Tables
+## 3.5 Bảng bên ngoài (External Tables)
 
 Nguồn:
 - [CREATE EXTERNAL TABLE](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-external-table-transact-sql?view=sql-server-ver17)
@@ -592,11 +625,11 @@ WITH
 GO
 ```
 
-> Cú pháp/auth khác nhau theo SQL Server/Azure SQL/Fabric. Đọc platform trong scenario.
+> Cú pháp và cách xác thực khác nhau giữa SQL Server, Azure SQL và Fabric. Luôn đọc kỹ nền tảng được nêu trong tình huống.
 
 ---
 
-# PHẦN 4 — JSON COLUMNS VÀ INDEXES
+# PHẦN 4 — CỘT JSON VÀ CHỈ MỤC JSON
 
 Nguồn:
 - [JSON data in SQL Server](https://learn.microsoft.com/en-us/sql/relational-databases/json/json-data-sql-server?view=sql-server-ver17)
@@ -627,7 +660,7 @@ CREATE TABLE dbo.Products
 );
 ```
 
-### Availability phải đọc trước khi chọn đáp án
+### Phải kiểm tra nền tảng có hỗ trợ trước khi chọn đáp án
 
 | Khả năng | Azure SQL Database | Azure SQL Managed Instance | SQL Server 2025 | SQL database in Fabric |
 |---|---|---|---|---|
@@ -639,7 +672,9 @@ CREATE TABLE dbo.Products
 
 ---
 
-## 4.2 Computed column + B-tree index
+## 4.2 Cột được tính toán kết hợp chỉ mục B-tree
+
+Khi nền tảng chưa hỗ trợ native JSON index, cách phổ biến là trích giá trị JSON cần tìm thành computed column rồi tạo B-tree index trên cột đó.
 
 ```sql
 CREATE TABLE dbo.CustomerProfiles
@@ -701,9 +736,11 @@ Nhớ:
 
 ---
 
-# PHẦN 5 — CONSTRAINTS
+# PHẦN 5 — RÀNG BUỘC TOÀN VẸN DỮ LIỆU
 
 ## PRIMARY KEY
+
+Khóa chính vừa ngăn giá trị trùng/NULL, vừa cung cấp cách nhận diện duy nhất từng dòng.
 
 ```sql
 CONSTRAINT PK_Orders PRIMARY KEY (OrderId)
@@ -721,11 +758,15 @@ FK **không tự động tạo index trên FK column**.
 
 ## UNIQUE
 
+Ràng buộc `UNIQUE` dùng khi một giá trị phải duy nhất nhưng không phải khóa chính của bảng.
+
 ```sql
 CONSTRAINT UQ_Customers_Email UNIQUE (Email)
 ```
 
 ## CHECK
+
+`CHECK` kiểm tra một biểu thức khi ghi dữ liệu. Chỉ kết quả `FALSE` bị chặn; vì vậy cần xử lý `NULL` rõ ràng nếu nghiệp vụ không cho phép thiếu giá trị.
 
 ```sql
 CONSTRAINT CK_OrderLine_Quantity
@@ -733,6 +774,8 @@ CHECK (Quantity > 0)
 ```
 
 ## DEFAULT
+
+`DEFAULT` cung cấp giá trị khi câu `INSERT` không truyền cột đó; nó không sửa các dòng đã tồn tại.
 
 ```sql
 CreatedAt DATETIME2 NOT NULL
@@ -742,7 +785,7 @@ CreatedAt DATETIME2 NOT NULL
 
 ---
 
-## Trusted vs Untrusted FK
+## Khóa ngoại đáng tin cậy và chưa đáng tin cậy
 
 Sau:
 
@@ -772,9 +815,11 @@ WHERE name = 'FK_Orders_Customers';
 
 ---
 
-# PHẦN 6 — SEQUENCE VS IDENTITY
+# PHẦN 6 — SO SÁNH `SEQUENCE` VÀ `IDENTITY`
 
 ## IDENTITY
+
+`IDENTITY` tự sinh số trong phạm vi một cột của một bảng, phù hợp với khóa thay thế đơn giản.
 
 ```sql
 OrderId BIGINT IDENTITY(1,1)
@@ -809,7 +854,7 @@ Bẫy: Sequence/Identity không bảo đảm gapless.
 
 ---
 
-# PHẦN 7 — TABLE & INDEX PARTITIONING
+# PHẦN 7 — PHÂN VÙNG BẢNG VÀ CHỈ MỤC
 
 Nguồn:
 - [Create partitioned tables and indexes](https://learn.microsoft.com/en-us/sql/relational-databases/partitions/create-partitioned-tables-and-indexes?view=sql-server-ver17)
@@ -862,6 +907,8 @@ GO
 ---
 
 ## 7.2 `$PARTITION`
+
+Hàm `$PARTITION` cho biết một giá trị sẽ nằm ở partition nào. Dùng nó để kiểm tra ranh giới trước khi chuyển hoặc bảo trì partition.
 
 ```sql
 SELECT
@@ -929,9 +976,11 @@ GO
 
 ---
 
-# PHẦN 8 — LAB TỔNG HỢP
+# PHẦN 8 — BÀI THỰC HÀNH TỔNG HỢP
 
-## 8.1 Constraints + Sequence + Filtered Index
+## 8.1 Ràng buộc + Sequence + chỉ mục có điều kiện lọc
+
+Bài này kết hợp ràng buộc dữ liệu, dãy số dùng chung và index chỉ chứa tập dòng thường được truy vấn.
 
 ```sql
 CREATE SEQUENCE dbo.OrderSeq
@@ -972,6 +1021,8 @@ GO
 
 ## 8.2 Ordered CCI
 
+Bài này minh họa columnstore có thứ tự để cải thiện khả năng loại bỏ segment cho các truy vấn thường lọc theo cùng nhóm cột.
+
 ```sql
 CREATE TABLE dbo.FactTransactions
 (
@@ -990,6 +1041,8 @@ GO
 ```
 
 ## 8.3 Temporal
+
+Bài này tạo bảng lưu lịch sử tự động, thay đổi dữ liệu rồi truy vấn lại trạng thái ở các thời điểm khác nhau.
 
 ```sql
 CREATE TABLE dbo.ProductPrice
@@ -1017,7 +1070,7 @@ WITH
 GO
 ```
 
-## 8.4 Native JSON index
+## 8.4 Chỉ mục JSON tích hợp sẵn
 
 ```sql
 CREATE TABLE dbo.ProductCatalog
@@ -1033,11 +1086,11 @@ FOR ('$.sku', '$.brand', '$.price');
 GO
 ```
 
-> Nếu môi trường lab chưa bật feature tương ứng, dùng computed-column JSON index để thực hành.
+> Nếu môi trường thực hành chưa bật tính năng tương ứng, hãy dùng cột được tính toán kết hợp chỉ mục JSON để luyện tập.
 
 ---
 
-# PHẦN 9 — EXAM TRAPS
+# PHẦN 9 — BẪY THƯỜNG GẶP TRONG ĐỀ
 
 1. “Clustered index = physical disk order” ➜ quá đơn giản.
 2. “Columnstore = mọi table lớn” ➜ sai.
@@ -1047,12 +1100,12 @@ GO
 6. “Sequence gapless” ➜ sai.
 7. “Partitioning tự động làm mọi query nhanh” ➜ sai.
 8. “Không có JSON index trực tiếp” ➜ lỗi thời với SQL Server 2025.
-9. “NCCI = CCI nhưng ít columns hơn” ➜ sai mental model.
+9. “NCCI = CCI nhưng ít cột hơn” ➜ sai cách hiểu bản chất.
 10. “In-Memory = data không durable” ➜ sai với `SCHEMA_AND_DATA`.
 
 ---
 
-# PHẦN 10 — MOCK QUESTIONS
+# PHẦN 10 — CÂU HỎI TỰ KIỂM TRA
 
 ### Q1
 Fact table 800M rows, nightly batch, chủ yếu aggregate theo Date/Region.
@@ -1106,7 +1159,9 @@ Archive một monthly partition nhanh.
 
 ---
 
-# PHẦN 11 — CHEAT SHEET
+# PHẦN 11 — BẢNG GHI NHỚ NHANH
+
+Dùng bảng ghi nhớ ngắn dưới đây để ôn lại sau khi đã học và chạy lệnh; không dùng nó thay cho phần giải thích chi tiết phía trên.
 
 ```text
 OLAP/DW aggregation        -> CCI
@@ -1125,7 +1180,7 @@ FK trusted again           -> WITH CHECK CHECK CONSTRAINT
 
 ---
 
-# PHẦN 12 — LINK THAM KHẢO
+# PHẦN 12 — TÀI LIỆU THAM KHẢO
 
 - [DP-800 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-800)
 - [CREATE TABLE](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-table-transact-sql?view=sql-server-ver17)

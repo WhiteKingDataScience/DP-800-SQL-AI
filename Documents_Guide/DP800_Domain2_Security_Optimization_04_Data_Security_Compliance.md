@@ -1,27 +1,42 @@
-# DP-800 Domain 2: Implement Data Security and Compliance
+# DP-800 Miền 2 — Bảo mật dữ liệu và đáp ứng yêu cầu tuân thủ
 
-> **Miền 2:** Secure, Optimize, and Deploy Database Solutions (35–40%)  
-> **Chủ đề:** Implement Data Security and Compliance  
+> **Miền 2:** Bảo mật, tối ưu và triển khai giải pháp cơ sở dữ liệu (35–40%)  
+> **Chủ đề:** Mã hóa, che dữ liệu, lọc dòng, phân quyền, kiểm toán và bảo vệ endpoint  
 > **Cập nhật:** 09/08/2026  
 > **Blueprint áp dụng:** DP-800 — Skills measured as of March 12, 2026  
-> **Mục tiêu:** Học từ nền tảng đến mức có thể chọn đúng giải pháp trong câu hỏi tình huống và viết được T-SQL cốt lõi.
+> **Cập nhật cách trình bày:** 12/08/2026
+
+## Chương này giúp bạn bảo vệ điều gì?
+
+“Bảo mật database” không phải một nút bật duy nhất. Mỗi cơ chế ngăn một loại rủi ro khác nhau.
+
+Ví dụ, một hệ thống bệnh viện có thể đồng thời yêu cầu:
+
+- người lấy được file backup không đọc được dữ liệu;
+- DBA không nhìn thấy số căn cước của bệnh nhân;
+- bác sĩ chỉ xem được bệnh nhân thuộc khoa của mình;
+- nhân viên tổng đài vẫn thấy dòng bệnh nhân nhưng số điện thoại bị che;
+- mọi lần xem hoặc sửa hồ sơ đều được ghi lại để kiểm toán;
+- ứng dụng gọi Azure OpenAI mà không lưu API key trong mã nguồn.
+
+Không một tính năng nào giải quyết tất cả yêu cầu trên. Bạn phải xác định **đang bảo vệ dữ liệu khỏi ai, ở trạng thái nào và cần để lại bằng chứng gì**. Đây là cách đề thi phân biệt TDE, Always Encrypted, DDM, RLS, permissions và auditing.
 
 ---
 
-## 0. PHẠM VI THI CHÍNH THỨC & CÁCH DÙNG TÀI LIỆU
+## 0. PHẠM VI THI CHÍNH THỨC VÀ CÁCH DÙNG TÀI LIỆU
 
 Theo Study Guide DP-800 hiện hành, bạn phải nắm:
 
-- Data encryption, bao gồm **Always Encrypted** và **column-level encryption**.
+- Mã hóa dữ liệu, bao gồm **Always Encrypted** và **mã hóa cấp cột**.
 - **Dynamic Data Masking (DDM)**.
 - **Row-Level Security (RLS)**.
-- **Object-level permissions**.
-- Secure database access, đặc biệt **passwordless access**.
-- **Auditing**.
+- **Quyền trên đối tượng**.
+- Truy cập database an toàn, đặc biệt là **kết nối không dùng mật khẩu**.
+- **Kiểm toán**.
 - Bảo vệ model endpoint, đặc biệt **Managed Identity**.
-- Bảo vệ **GraphQL, REST và MCP endpoints**.
+- Bảo vệ **GraphQL, REST và MCP endpoint**.
 
-> **Lưu ý thi:** Microsoft nói các bullet trong Study Guide chỉ mô tả cách đánh giá; các chủ đề liên quan vẫn có thể xuất hiện. Vì vậy tài liệu này giữ thêm TDE, Key Vault, Entra ID và DAB security vì chúng giúp bạn phân biệt đúng các scenario.
+> **Lưu ý thi:** Microsoft nói các gạch đầu dòng trong Study Guide chỉ mô tả cách đánh giá; các chủ đề liên quan vẫn có thể xuất hiện. Vì vậy tài liệu này giữ thêm TDE, Key Vault, Entra ID và bảo mật DAB vì chúng giúp bạn phân biệt đúng các tình huống.
 
 **Nguồn chuẩn:**
 - [DP-800 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-800)
@@ -35,7 +50,7 @@ Theo Study Guide DP-800 hiện hành, bạn phải nắm:
 
 Đây là bảng nên thuộc theo **mục tiêu bảo vệ**, không học theo tên sản phẩm.
 
-| Cơ chế | Bảo vệ cái gì? | SQL Engine/DBA có thấy plaintext? | Có thay đổi ứng dụng? | Scenario thường gặp |
+| Cơ chế | Bảo vệ cái gì? | SQL Engine/DBA có thấy dữ liệu rõ? | Có thay đổi ứng dụng? | Tình huống thường gặp |
 |---|---|---:|---:|---|
 | **TDE** | Data/log/backup **at rest** | Có, khi truy vấn bình thường | Thường không | “Mất file backup/disk vẫn không đọc được” |
 | **Column-level encryption** | Một số cột, mã hóa/giải mã bằng T-SQL | Có thể, nếu principal có key/quyền | Có | Ứng dụng chủ động gọi `EncryptByKey`/`DecryptByKey` |
@@ -46,7 +61,7 @@ Theo Study Guide DP-800 hiện hành, bạn phải nắm:
 | **Permissions** | User được phép làm thao tác gì trên object nào | — | — | Least privilege |
 | **Auditing** | Ghi lại ai đã làm gì | — | — | Compliance/forensics |
 
-### Exam trap quan trọng
+### Bẫy quan trọng trong đề
 
 - **DDM ≠ encryption.**
 - **RLS ≠ DDM.** RLS loại bỏ dòng không được phép; DDM vẫn trả dòng nhưng che giá trị.
@@ -59,11 +74,13 @@ Tham khảo:
 
 ---
 
-## 2. Column-level encryption — phần blueprint dễ bị bỏ sót
+## 2. Mã hóa ở cấp cột (Column-level encryption) — phần dễ bị bỏ sót
 
 Column-level encryption dùng **Database Master Key → Certificate → Symmetric Key**, rồi ứng dụng/T-SQL chủ động mở key để mã hóa hoặc giải mã.
 
-### Mental model
+### Cách hình dung chuỗi khóa
+
+Sơ đồ sau cho thấy khóa cấp trên bảo vệ khóa cấp dưới. Muốn giải mã cột, hệ thống phải đi đúng chuỗi từ Database Master Key tới symmetric key.
 
 ```text
 Database Master Key
@@ -75,9 +92,9 @@ Symmetric Key
 Sensitive Column
 ```
 
-### Lab đầy đủ
+### Bài thực hành đầy đủ
 
-> Chạy trên database lab riêng, không dùng production.
+> Chạy trên cơ sở dữ liệu thực hành riêng, không dùng môi trường thật.
 
 ```sql
 USE YourLabDatabase;
@@ -139,7 +156,7 @@ CLOSE SYMMETRIC KEY CustomerDataKey;
 GO
 ```
 
-**Khi nào chọn?** Khi requirement nói database code chủ động mã hóa/giải mã cột và người dùng có quyền key có thể giải mã. Nếu requirement nói **database engine/DBA không được thấy plaintext**, nghĩ đến **Always Encrypted**.
+**Khi nào chọn?** Khi yêu cầu nói mã trong cơ sở dữ liệu chủ động mã hóa/giải mã cột và người có quyền dùng khóa có thể giải mã. Nếu yêu cầu nói **bộ máy cơ sở dữ liệu hoặc DBA không được thấy dữ liệu rõ**, nghĩ đến **Always Encrypted**.
 
 Tham khảo: [SQL Server column-level encryption functions](https://learn.microsoft.com/en-us/sql/relational-databases/security/encryption/sql-server-encryption?view=sql-server-ver17)
 
@@ -147,12 +164,12 @@ Tham khảo: [SQL Server column-level encryption functions](https://learn.micros
 
 ## 3. Always Encrypted
 
-### 3.1 Hai loại key
+### 3.1 Hai loại khóa
 
 - **Column Master Key (CMK):** metadata trong database trỏ tới key thực ở nơi tin cậy, ví dụ Windows Certificate Store hoặc Azure Key Vault.
 - **Column Encryption Key (CEK):** key dùng để mã hóa giá trị trong cột; bản CEK được lưu trong metadata ở dạng đã được CMK bảo vệ.
 
-### 3.2 Deterministic vs Randomized
+### 3.2 Mã hóa tất định và mã hóa ngẫu nhiên
 
 | Loại | Cùng plaintext → cùng ciphertext? | Khả năng truy vấn | Bảo mật |
 |---|---:|---|---|
@@ -199,11 +216,11 @@ Tham khảo:
 
 ---
 
-## 4. Dynamic Data Masking (DDM)
+## 4. Che dữ liệu động (Dynamic Data Masking — DDM)
 
 DDM **không biến dữ liệu thật thành ciphertext**. User có quyền SELECT vẫn truy vấn bảng, nhưng nếu không có `UNMASK`, giá trị nhạy cảm bị che trong result set.
 
-### 4.1 Năm loại mask cần nhận diện
+### 4.1 Năm cách che dữ liệu cần nhận diện
 
 - `default()`
 - `email()`
@@ -211,7 +228,7 @@ DDM **không biến dữ liệu thật thành ciphertext**. User có quyền SEL
 - `partial(prefix, "padding", suffix)`
 - `datetime("Y"|"M"|"D"|"h"|"m"|"s")` — SQL Server 2022+.
 
-### 4.2 Lab
+### 4.2 Bài thực hành
 
 ```sql
 CREATE TABLE dbo.Customers
@@ -254,24 +271,26 @@ GO
 
 SQL Server 2022+ hỗ trợ **granular UNMASK** ở database/schema/table/column level. Trong exam, hãy chọn phạm vi nhỏ nhất đáp ứng yêu cầu.
 
-**Bẫy:** DDM không phải security boundary hoàn chỉnh. User có quyền truy vấn có thể suy luận dữ liệu qua các biểu thức/tấn công inference tùy quyền. Luôn kết hợp permissions/RLS/encryption khi requirement mạnh.
+**Bẫy:** DDM không phải ranh giới bảo mật hoàn chỉnh. Người dùng có quyền truy vấn vẫn có thể suy luận dữ liệu qua biểu thức, tùy quyền được cấp. Khi yêu cầu bảo mật cao, luôn kết hợp quyền truy cập, RLS và mã hóa.
 
 Tham khảo: [Dynamic Data Masking](https://learn.microsoft.com/en-us/sql/relational-databases/security/dynamic-data-masking?view=sql-server-ver17)
 
 ---
 
-## 5. Row-Level Security (RLS)
+## 5. Bảo mật theo dòng (Row-Level Security — RLS)
 
 RLS dùng:
 1. **Inline table-valued function (iTVF)** làm predicate.
 2. **Security Policy** gắn predicate vào bảng.
 
-### 5.1 Filter predicate và block predicate
+### 5.1 Điều kiện lọc và điều kiện chặn
 
 - **FILTER PREDICATE:** lọc các dòng mà principal không được phép truy cập. Nó có tác dụng với các thao tác đọc và các thao tác DML liên quan theo cơ chế RLS, không chỉ riêng `SELECT`.
 - **BLOCK PREDICATE:** chặn thao tác ghi làm cho row vi phạm policy. Có thể dùng `BEFORE`/`AFTER` cho các operation phù hợp.
 
-### 5.2 Multi-tenant với `SESSION_CONTEXT`
+### 5.2 Hệ thống nhiều khách hàng dùng chung với `SESSION_CONTEXT`
+
+Ví dụ đặt `TenantId` vào session hiện tại, rồi RLS dùng giá trị đó để tự động lọc các dòng thuộc tenant khác.
 
 ```sql
 CREATE SCHEMA Security;
@@ -325,7 +344,7 @@ SELECT * FROM dbo.SalesData;
 GO
 ```
 
-### Exam decision
+### Cách chọn trong đề
 
 - “User chỉ được thấy rows của tenant mình” → FILTER.
 - “User không được INSERT/UPDATE row sang tenant khác” → BLOCK.
@@ -335,7 +354,7 @@ Tham khảo: [Row-Level Security](https://learn.microsoft.com/en-us/sql/relation
 
 ---
 
-## 6. Object-level permissions — blueprint bắt buộc
+## 6. Quyền ở cấp đối tượng — nội dung bắt buộc
 
 ### 6.1 Ba động từ cần thuộc
 
@@ -343,7 +362,9 @@ Tham khảo: [Row-Level Security](https://learn.microsoft.com/en-us/sql/relation
 - `DENY`: từ chối rõ ràng; thường thắng grant ở scope liên quan.
 - `REVOKE`: gỡ GRANT/DENY trước đó, không có nghĩa là tự động DENY.
 
-### 6.2 Ưu tiên role thay vì grant rải rác từng user
+### 6.2 Ưu tiên vai trò (role) thay vì cấp quyền rải rác cho từng người dùng
+
+Đoạn lệnh sau cấp quyền cho một vai trò rồi thêm người dùng vào vai trò đó. Khi nhân sự thay đổi, bạn chỉ quản lý thành viên mà không phải sửa hàng loạt lệnh cấp quyền.
 
 ```sql
 CREATE ROLE reporting_reader;
@@ -358,7 +379,7 @@ ADD MEMBER ReportUser;
 GO
 ```
 
-### 6.3 Chỉ cấp quyền EXECUTE cho stored procedure
+### 6.3 Chỉ cấp quyền `EXECUTE` cho stored procedure
 
 ```sql
 CREATE ROLE app_executor;
@@ -375,9 +396,11 @@ Tham khảo: [Database Engine permissions](https://learn.microsoft.com/en-us/sql
 
 ---
 
-## 7. Passwordless database access với Microsoft Entra ID và Managed Identity
+## 7. Truy cập cơ sở dữ liệu không mật khẩu với Microsoft Entra ID và Managed Identity
 
-### 7.1 Mental model
+### 7.1 Cách hình dung
+
+Luồng sau tách xác thực danh tính khỏi phân quyền trong database: Entra xác nhận “ai”, còn SQL quyết định danh tính đó “được làm gì”.
 
 ```text
 Azure resource (App Service / Function / Container App)
@@ -389,7 +412,7 @@ Azure SQL
 GRANT đúng quyền cần thiết
 ```
 
-### 7.2 Tạo user cho Entra principal / Managed Identity
+### 7.2 Tạo người dùng cho danh tính Entra hoặc Managed Identity
 
 ```sql
 -- Chạy trong target database với Entra admin / principal đủ quyền
@@ -415,7 +438,7 @@ Tham khảo:
 
 ---
 
-## 8. Auditing
+## 8. Ghi nhật ký kiểm toán (Auditing)
 
 ### 8.1 Phân biệt
 
@@ -428,7 +451,7 @@ Tham khảo:
 - Auditing có thể gửi đến các target Azure phù hợp như Storage/Log Analytics/Event Hubs tùy cấu hình.
 - Log Analytics phù hợp khi cần KQL, alert, centralized monitoring.
 
-### 8.2 SQL Server audit lab
+### 8.2 Bài thực hành SQL Server Audit
 
 ```sql
 USE master;
@@ -475,9 +498,9 @@ Tham khảo:
 
 ---
 
-## 9. Secure model endpoints với Managed Identity
+## 9. Bảo vệ model endpoint bằng Managed Identity
 
-DP-800 có thể cho scenario Azure SQL gọi Azure OpenAI/REST endpoint qua `sp_invoke_external_rest_endpoint`.
+DP-800 có thể đưa ra tình huống Azure SQL gọi Azure OpenAI hoặc REST endpoint qua `sp_invoke_external_rest_endpoint`.
 
 ### 9.1 Các mảnh cần hiểu
 
@@ -486,7 +509,7 @@ DP-800 có thể cho scenario Azure SQL gọi Azure OpenAI/REST endpoint qua `sp
 3. Database scoped credential đại diện cho authentication.
 4. Chỉ principal cần thiết mới có quyền gọi external endpoint.
 
-### 9.2 Availability và bước enable theo platform
+### 9.2 Khả năng hỗ trợ và cách bật theo từng nền tảng
 
 | Platform | Availability/enablement ngày 09/08/2026 |
 |---|---|
@@ -509,9 +532,9 @@ RECONFIGURE WITH OVERRIDE;
 GO
 ```
 
-> **Bẫy:** không chạy hai `sp_configure` này trên Azure SQL Database/Fabric chỉ vì thấy chúng trong ví dụ SQL Server. Luôn đọc platform trong scenario.
+> **Bẫy:** không chạy hai lệnh `sp_configure` này trên Azure SQL Database/Fabric chỉ vì thấy chúng trong ví dụ SQL Server. Luôn đọc kỹ nền tảng trong tình huống.
 
-### 9.3 Credential dùng Managed Identity và quyền tối thiểu
+### 9.3 Thông tin xác thực dùng Managed Identity và quyền tối thiểu
 
 ```sql
 CREATE DATABASE SCOPED CREDENTIAL
@@ -558,19 +581,21 @@ SELECT @http_status AS HttpStatus, @response AS ResponseBody;
 GO
 ```
 
-> API version/model name phải dùng giá trị đang được resource của bạn hỗ trợ. Không hardcode API key nếu scenario yêu cầu passwordless.
+> Phiên bản API và tên model phải dùng giá trị mà tài nguyên của bạn đang hỗ trợ. Không ghi thẳng API key vào mã nếu tình huống yêu cầu xác thực không mật khẩu.
 
-Chỉ **HTTPS/TLS** được hỗ trợ; procedure không tự follow HTTP redirect. Return code là `0` khi nhận HTTP 2xx, là HTTP status code nếu response không phải 2xx, còn lỗi không thể thực hiện call sẽ ném exception. Đây là lý do nên kiểm tra cả return code lẫn `@response`.
+Chỉ **HTTPS/TLS** được hỗ trợ; procedure không tự đi theo chuyển hướng HTTP. Mã trả về là `0` khi nhận HTTP 2xx, là mã trạng thái HTTP nếu phản hồi không thuộc nhóm 2xx; lỗi khiến không thể thực hiện lời gọi sẽ được ném thành exception. Vì vậy phải kiểm tra cả mã trả về lẫn `@response`.
 
 Tham khảo: [sp_invoke_external_rest_endpoint](https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sp-invoke-external-rest-endpoint-transact-sql?view=sql-server-ver17)
 
 ---
 
-## 10. Secure REST, GraphQL và MCP endpoints
+## 10. Bảo vệ các endpoint REST, GraphQL và MCP
 
 Đây là phần thường bị học quá sơ sài.
 
 ### 10.1 Ba lớp bảo mật
+
+Một endpoint an toàn cần đủ ba lớp: xác thực request, giới hạn thao tác ở API và tiếp tục thực thi quyền thật trong database.
 
 ```text
 Authentication  → Bạn là ai?
@@ -578,9 +603,9 @@ Authorization   → Bạn được làm gì?
 Database policy → Row/object nào thực sự được phép?
 ```
 
-### 10.2 DAB security checklist
+### 10.2 Danh sách kiểm tra bảo mật DAB
 
-- Production không để endpoint nhạy cảm chạy như anonymous nếu không có requirement rõ ràng.
+- Ở môi trường thật (production), không để endpoint nhạy cảm cho phép truy cập ẩn danh nếu không có yêu cầu rõ ràng.
 - Dùng Microsoft Entra ID/JWT provider khi phù hợp.
 - Entity permissions phải **allow-list** action/field cần thiết.
 - DAB → Azure SQL nên dùng Managed Identity/passwordless nếu có thể.
@@ -601,9 +626,9 @@ Tham khảo:
 
 ---
 
-# PHẦN 2 — HANDS-ON TỔNG HỢP
+# PHẦN 2 — BÀI THỰC HÀNH TỔNG HỢP
 
-## Lab A — RLS + DDM + permissions theo tầng
+## Bài thực hành A — kết hợp RLS, DDM và phân quyền theo tầng
 
 Mục tiêu: cùng một bảng nhưng:
 - RLS giới hạn row theo tenant.
@@ -657,7 +682,7 @@ GO
 
 ---
 
-# PHẦN 3 — EXAM DECISION TABLE
+# PHẦN 3 — BẢNG CHỌN GIẢI PHÁP
 
 | Từ khóa trong câu hỏi | Nghĩ đến |
 |---|---|
@@ -691,7 +716,7 @@ D. RLS
 ### Câu 2
 Support team được SELECT bảng Customer nhưng chỉ được xem email dạng masked. Khi nào dùng `UNMASK`?
 
-**Đáp án:** Chỉ cấp cho principal có requirement xem giá trị thật. `SELECT` và `UNMASK` là hai quyền khác nhau.
+**Đáp án:** Chỉ cấp cho danh tính thực sự có yêu cầu xem giá trị thật. `SELECT` và `UNMASK` là hai quyền khác nhau.
 
 ### Câu 3
 Ứng dụng multi-tenant đã có filter predicate nhưng user vẫn chèn row mang TenantId khác. Cần gì?
@@ -725,13 +750,13 @@ DAB dùng một service identity để vào SQL nhưng policy RLS cần nhận d
 
 ---
 
-# PHẦN 5 — CHECKLIST “EXAM READY”
+# PHẦN 5 — DANH SÁCH TỰ KIỂM TRA
 
 Bạn chỉ nên đánh dấu `[x]` nếu có thể **giải thích bằng lời + viết syntax chính mà không nhìn tài liệu**.
 
 - [ ] Phân biệt TDE / column-level encryption / Always Encrypted / DDM.
 - [ ] Giải thích CMK và CEK của Always Encrypted.
-- [ ] Chọn deterministic vs randomized theo scenario.
+- [ ] Chọn mã hóa tất định (deterministic) hay ngẫu nhiên (randomized) theo tình huống.
 - [ ] Tạo DDM và giải thích `UNMASK`.
 - [ ] Tạo RLS iTVF + FILTER + BLOCK predicate.
 - [ ] Phân biệt GRANT / DENY / REVOKE và role-based permissions.

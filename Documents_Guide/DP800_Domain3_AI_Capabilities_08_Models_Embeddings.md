@@ -1,25 +1,45 @@
-# DP-800 Domain 3: Design and Implement Models and Embeddings
+# DP-800 Miền 3 — Thiết kế model, chia đoạn và tạo biểu diễn vector
 
-> **Miền 3:** Implement AI Capabilities in Database Solutions (25–30%)  
-> **Chủ đề:** Design and Implement Models and Embeddings  
+> **Miền 3:** Triển khai khả năng AI trong giải pháp cơ sở dữ liệu (25–30%)  
+> **Chủ đề:** Chọn model, cắt tài liệu thành đoạn và biến nội dung thành vector  
 > **Blueprint dùng để cập nhật:** DP-800 Skills measured as of **March 12, 2026**  
-> **Ngày rà soát tài liệu:** 09/08/2026  
-> **Mục tiêu:** Học từ nền tảng đến mức có thể đọc scenario, chọn đúng giải pháp và viết được T-SQL cần thiết trong kỳ thi.
+> **Cập nhật cách trình bày:** 12/08/2026  
+> **Mục tiêu:** Hiểu dữ liệu đi từ văn bản gốc đến vector như thế nào, rồi chọn đúng model và cách cập nhật embedding.
+
+## Chương này nằm ở đâu trong một hệ thống AI?
+
+Giả sử doanh nghiệp có 10.000 tài liệu hướng dẫn. Người dùng hỏi “làm sao trả lại sản phẩm bị lỗi?”, nhưng tài liệu lại dùng cụm từ “quy trình hoàn hàng”. Tìm kiếm theo từ khóa có thể bỏ sót vì hai câu không dùng cùng từ.
+
+Để tìm theo **ý nghĩa**, hệ thống thực hiện ba việc:
+
+```text
+Tài liệu dài
+   ↓ cắt thành các đoạn nhỏ có đủ ngữ cảnh
+Chunk
+   ↓ gửi qua embedding model
+Vector — một dãy số biểu diễn ý nghĩa
+   ↓ lưu cùng nội dung và metadata trong SQL
+Sẵn sàng cho Vector Search
+```
+
+Chương này tập trung vào phần chuẩn bị đó. File 09 sẽ dùng các vector để tìm kiếm; File 10 sẽ dùng kết quả tìm kiếm để xây RAG.
+
+> **Điểm mấu chốt:** embedding không phải bản tóm tắt, không phải mã hóa và không phải câu trả lời của AI. Nó chỉ là biểu diễn số để máy so sánh mức độ gần nghĩa.
 
 ---
 
-## 0. Bạn phải nắm được gì để “exam-ready”?
+## 0. Bạn phải nắm được gì trước khi đi thi?
 
 Theo DP-800 Study Guide hiện hành, phần **Design and implement models and embeddings** yêu cầu bạn có thể:
 
-1. **Evaluate external models**: đánh giá model theo multimodal, multilingual, model size, structured output và yêu cầu bài toán.
-2. **Create and manage external models**.
+1. Đánh giá external model theo khả năng đa phương thức, đa ngôn ngữ, kích thước và structured output.
+2. Tạo và quản lý external model.
 3. Chọn **embedding maintenance method** phù hợp: table trigger, Change Tracking, Azure Functions SQL trigger binding, Azure Logic Apps, CDC, Change Event Streaming (CES), Microsoft Foundry.
-4. Chọn đúng cột/dữ liệu để đưa vào embedding.
-5. Thiết kế và triển khai **chunking**.
-6. Sinh embeddings bằng các khả năng native của Microsoft SQL.
+4. Chọn đúng cột và nội dung để đưa vào embedding.
+5. Thiết kế cách chia tài liệu thành các đoạn nhỏ — **chunking**.
+6. Sinh embedding bằng các khả năng tích hợp trong Microsoft SQL.
 
-> **Tư duy thi:** Microsoft thường không chỉ hỏi “cú pháp là gì?”, mà hỏi “với workload này, giải pháp nào phù hợp nhất và vì sao?”. Vì vậy tài liệu này luôn đi theo thứ tự **khái niệm → quyết định → cú pháp → lab → bẫy thi**.
+> **Tư duy thi:** Microsoft thường không chỉ hỏi “cú pháp là gì?”, mà hỏi “với khối lượng công việc này, giải pháp nào phù hợp nhất và vì sao?”. Vì vậy tài liệu này luôn đi theo thứ tự **khái niệm → quyết định → cú pháp → bài thực hành → bẫy thi**.
 
 ### Ma trận nền tảng và trạng thái tính năng (chốt ngày 09/08/2026)
 
@@ -35,9 +55,9 @@ Theo DP-800 Study Guide hiện hành, phần **Design and implement models and e
 
 ---
 
-# 📘 PHẦN 1 — NỀN TẢNG MODELS, EMBEDDINGS VÀ VECTOR
+# PHẦN 1 — NỀN TẢNG VỀ MODEL, EMBEDDING VÀ VECTOR
 
-## 1. Vector embedding là gì?
+## 1. Embedding — biểu diễn ý nghĩa bằng vector — là gì?
 
 **Embedding** là cách biến dữ liệu có ý nghĩa (text, hình ảnh hoặc loại dữ liệu mà model hỗ trợ) thành một dãy số gọi là **vector**.
 
@@ -60,7 +80,7 @@ Các câu có ý nghĩa gần nhau thường sinh ra các vector “gần nhau�
 
 ---
 
-## 2. Native `VECTOR` trong Microsoft SQL
+## 2. Kiểu dữ liệu `VECTOR` tích hợp trong Microsoft SQL
 
 SQL Server 2025, Azure SQL Database, Azure SQL Managed Instance (theo policy hỗ trợ tương ứng) và SQL database in Microsoft Fabric hỗ trợ kiểu dữ liệu native `VECTOR`.
 
@@ -77,7 +97,7 @@ VALUES
     (2, '[0.4, 0.5, 0.6]');
 ```
 
-### Giới hạn dimension rất quan trọng
+### Giới hạn số chiều rất quan trọng
 
 `VECTOR` hiện hỗ trợ tối đa **1,998 dimensions**.
 
@@ -115,29 +135,29 @@ Trong kỳ thi, nếu đề không yêu cầu Preview-specific optimization, m�
 
 ---
 
-# 📘 PHẦN 2 — EVALUATE EXTERNAL MODELS
+# PHẦN 2 — ĐÁNH GIÁ MODEL BÊN NGOÀI
 
-## 3. “External model” trong DP-800 nghĩa là gì?
+## 3. “Model bên ngoài” trong DP-800 nghĩa là gì?
 
 External model là AI model chạy ngoài database engine nhưng được SQL đăng ký thành object để T-SQL có thể gọi một cách có quản lý.
 
 Trong phạm vi `CREATE EXTERNAL MODEL` hiện hành, model object được dùng cho **embedding inference** (`MODEL_TYPE = EMBEDDINGS`).
 
-### Các tiêu chí cần đánh giá model
+### Các tiêu chí chọn model phù hợp
 
 | Tiêu chí | Câu hỏi cần đặt ra | Tác động |
 |---|---|---|
-| **Task fit** | Model dùng cho embedding hay generation? | Chọn sai model → không giải được bài toán |
+| **Phù hợp nhiệm vụ** | Model dùng để tạo embedding hay sinh nội dung? | Chọn sai model → không giải được bài toán |
 | **Multilingual** | Có hiểu tốt tiếng Việt + tiếng Anh không? | Quan trọng cho kho tri thức đa ngôn ngữ |
 | **Multimodal** | Có cần text + image/audio không? | Ảnh hưởng model/architecture |
-| **Dimensions** | Output vector bao nhiêu chiều? | Ảnh hưởng storage, index, compatibility |
-| **Latency** | SLA tìm kiếm/ingestion là bao nhiêu? | Model lớn thường tốn thời gian hơn |
-| **Cost** | Tần suất tạo/rebuild embeddings? | Ảnh hưởng chi phí inference |
-| **Context/input limits** | Một request nhận tối đa bao nhiêu input? | Ảnh hưởng chunk size |
-| **Structured output** | Downstream có cần JSON/schema ổn định không? | Quan trọng với generation workflow |
-| **Data residency/security** | Dữ liệu có được phép rời region/service boundary? | Ảnh hưởng endpoint và identity |
+| **Số chiều** | Vector đầu ra có bao nhiêu chiều? | Ảnh hưởng dung lượng, index và tính tương thích |
+| **Độ trễ** | SLA tìm kiếm/nạp dữ liệu là bao nhiêu? | Model lớn thường tốn thời gian hơn |
+| **Chi phí** | Tần suất tạo hoặc sinh lại embedding? | Ảnh hưởng chi phí suy luận |
+| **Giới hạn đầu vào** | Một request nhận tối đa bao nhiêu nội dung? | Ảnh hưởng kích thước chunk |
+| **Structured output** | Hệ thống phía sau có cần JSON/schema ổn định không? | Quan trọng với quy trình sinh nội dung |
+| **Vị trí và bảo mật dữ liệu** | Dữ liệu có được phép rời region hoặc ranh giới dịch vụ không? | Ảnh hưởng endpoint và identity |
 
-> **Exam pattern:** “Cần semantic search đa ngôn ngữ, dữ liệu thay đổi thường xuyên, cần latency thấp” → bạn phải cân bằng **quality + vector size + inference latency + maintenance cost**, không phải cứ chọn model lớn nhất.
+> **Mẫu câu hỏi thường gặp:** “Cần tìm kiếm ngữ nghĩa đa ngôn ngữ, dữ liệu thay đổi thường xuyên và độ trễ thấp” → phải cân bằng **chất lượng + kích thước vector + độ trễ suy luận + chi phí cập nhật**, không phải cứ chọn model lớn nhất.
 
 ### Chọn embedding model: ví dụ Microsoft Foundry/Azure OpenAI
 
@@ -151,21 +171,21 @@ Các con số dưới đây là thông số Microsoft công bố cho những mod
 
 `text-embedding-3-*` hỗ trợ rút gọn output qua tham số `dimensions`. Không tự ý đổi dimension/model cho một phần dữ liệu: vectors từ hai model hoặc hai cấu hình dimension **không cùng một vector space** để so sánh đáng tin cậy. Khi migrate model, hãy tạo version mới, re-embed corpus và query bằng cùng version, đo recall/latency rồi mới cut over. Xem [model catalog do Azure bán trực tiếp](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure) và [Embeddings REST API](https://learn.microsoft.com/en-us/rest/api/aifoundry/azureopenai/embeddings).
 
-### Multimodal, multilingual, model size và structured output: hiểu đúng phạm vi
+### Đa phương thức, đa ngôn ngữ, kích thước model và đầu ra có cấu trúc: hiểu đúng phạm vi
 
 - **Multimodal:** nếu nguồn có ảnh/audio, cần model/processing pipeline chuyển nội dung đó thành representation phù hợp; `CREATE EXTERNAL MODEL ... MODEL_TYPE = EMBEDDINGS` hiện không biến mọi model sinh văn bản thành multimodal SQL function.
 - **Multilingual:** benchmark bằng chính tiếng Việt, tiếng Anh và các cặp cross-language của doanh nghiệp; tên “multilingual” không thay thế evaluation dataset.
 - **Model size:** model lớn hơn có thể tăng chất lượng nhưng thường tăng latency/cost; phải đo trên ground-truth queries.
-- **Structured output:** rất quan trọng khi đánh giá generation model cho RAG/tool workflow. Tuy nhiên external model object của cú pháp SQL hiện hành chỉ nhận `MODEL_TYPE = EMBEDDINGS`; structured JSON của LLM được xử lý ở REST/RAG workflow trong file 10.
+- **Structured output:** rất quan trọng khi đánh giá model sinh nội dung cho RAG hoặc tool. Tuy nhiên external model của cú pháp SQL hiện hành chỉ nhận `MODEL_TYPE = EMBEDDINGS`; JSON có cấu trúc của LLM được xử lý trong quy trình REST/RAG ở file 10.
 
-### Remote endpoint vs local ONNX runtime
+### So sánh endpoint từ xa và ONNX Runtime cục bộ
 
-Current `CREATE EXTERNAL MODEL` documentation còn hỗ trợ các API formats như Azure OpenAI/OpenAI/Ollama và **ONNX Runtime**. ONNX local là **Developer Preview**, chỉ áp dụng SQL Server 2025 trên Windows; cần SQL Server Machine Learning Services, database `PREVIEW_FEATURES = ON`, server option `external AI runtimes enabled = 1`, runtime/model/tokenizer files và quyền filesystem phù hợp.
+Tài liệu `CREATE EXTERNAL MODEL` hiện hành hỗ trợ các định dạng API như Azure OpenAI, OpenAI, Ollama và **ONNX Runtime**. ONNX cục bộ là **Developer Preview**, chỉ áp dụng cho SQL Server 2025 trên Windows; cần SQL Server Machine Learning Services, `PREVIEW_FEATURES = ON`, tùy chọn server `external AI runtimes enabled = 1`, các file runtime/model/tokenizer và quyền đọc file phù hợp.
 
-- Remote model: dễ dùng managed cloud model nhưng có network/auth/data-egress considerations.
-- Local ONNX: inference gần SQL Server hơn nhưng phải quản lý runtime/model files và security của third-party model.
+- Model từ xa: dễ dùng model được dịch vụ cloud quản lý, nhưng phải cân nhắc mạng, xác thực và dữ liệu gửi ra ngoài.
+- ONNX cục bộ: chạy suy luận gần SQL Server hơn nhưng phải tự quản lý file runtime/model và bảo mật model bên thứ ba.
 
-Trong DP-800, hãy ưu tiên nắm chắc external embedding model + Managed Identity; ONNX là related/current feature để nhận diện scenario.
+Trong DP-800, hãy ưu tiên nắm chắc model embedding bên ngoài kết hợp Managed Identity; ONNX là tính năng liên quan hiện hành cần biết để nhận diện tình huống.
 
 ```sql
 -- Chỉ dành cho lab ONNX Developer Preview trên SQL Server 2025/Windows.
@@ -200,9 +220,9 @@ GO
 
 ---
 
-# 📘 PHẦN 3 — `CREATE EXTERNAL MODEL` VÀ QUẢN LÝ MODEL
+# PHẦN 3 — TẠO VÀ QUẢN LÝ MODEL BÊN NGOÀI
 
-## 4. Syntax hiện hành của `CREATE EXTERNAL MODEL`
+## 4. Cú pháp hiện hành của `CREATE EXTERNAL MODEL`
 
 Cú pháp trọng yếu:
 
@@ -232,9 +252,9 @@ WITH
 
 ---
 
-## 5. Authentication: ưu tiên Managed Identity khi scenario yêu cầu passwordless
+## 5. Xác thực: ưu tiên Managed Identity khi yêu cầu không dùng mật khẩu
 
-### 5.1. Database scoped credential
+### 5.1. Thông tin xác thực ở phạm vi cơ sở dữ liệu
 
 Ví dụ khung cấu hình Managed Identity:
 
@@ -259,7 +279,7 @@ GO
 
 > **Lưu ý quan trọng:** Role RBAC cụ thể phụ thuộc resource và thao tác. Ví dụ `CREATE EXTERNAL MODEL` với Azure OpenAI trên SQL Server 2025 hiện yêu cầu identity được cấp **Cognitive Services OpenAI Contributor** theo ví dụ chính thức; direct chat/completions thường dùng role inference hẹp hơn như **Cognitive Services OpenAI User** nếu đủ. Luôn dùng **least privilege** và xác nhận trong [Azure OpenAI RBAC](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/role-based-access-control). Trong câu hỏi thi, “không secrets/password/API key” thường trỏ tới **Managed Identity**.
 
-### 5.2. External REST endpoint setting
+### 5.2. Cấu hình REST endpoint bên ngoài
 
 Trên SQL Server 2025 và một số cấu hình Azure SQL Managed Instance, tính năng gọi external REST cần được bật:
 
@@ -269,11 +289,11 @@ RECONFIGURE WITH OVERRIDE;
 GO
 ```
 
-Azure SQL Database và SQL database in Fabric có hành vi khác; luôn đọc phần **Applies to / prerequisites** của docs khi lab.
+Azure SQL Database và SQL database in Fabric có hành vi khác; khi thực hành, luôn đọc phần **Applies to/Prerequisites** (áp dụng cho/điều kiện cần có) trong tài liệu Microsoft.
 
 ---
 
-## 6. Lab: đăng ký embedding model
+## 6. Bài thực hành: đăng ký model tạo embedding
 
 > Thay các placeholder `<...>` bằng endpoint/deployment thật của bạn.
 
@@ -303,7 +323,9 @@ WITH
 GO
 ```
 
-### Kiểm tra model objects
+### Kiểm tra các đối tượng model đã tạo
+
+Truy vấn catalog sau xác nhận model đã được đăng ký và cho biết cấu hình mà SQL đang quản lý.
 
 ```sql
 SELECT *
@@ -311,7 +333,7 @@ FROM sys.external_models;
 GO
 ```
 
-### Permission để tạo và sử dụng external model
+### Quyền để tạo và sử dụng model bên ngoài
 
 External model là database-level object (tên phải unique trong database; không học nó như một schema-qualified table object). Các permission hiện hành đáng biết:
 
@@ -331,7 +353,7 @@ GO
 
 > **Bẫy thi:** Có model object chưa đủ; principal còn phải có permission thích hợp để sử dụng model.
 
-### Retry cho embedding inference
+### Thử lại khi gọi model tạo embedding
 
 Current `CREATE EXTERNAL MODEL` hỗ trợ cấu hình retry qua `PARAMETERS`:
 
@@ -351,7 +373,7 @@ GO
 
 `retry_count` là để xử lý lỗi transient phù hợp; không thay thế việc sửa sai credential/RBAC/URL.
 
-### Thay đổi model definition
+### Thay đổi định nghĩa model
 
 Theo trang `Applies to` chốt ngày rà soát, `ALTER EXTERNAL MODEL` và `DROP EXTERNAL MODEL` liệt kê SQL Server 2025, Azure SQL Database và SQL database in Fabric; không nên tự suy rộng sang Managed Instance nếu trang version/platform bạn dùng chưa liệt kê.
 
@@ -380,7 +402,7 @@ GO
 
 ---
 
-# 📘 PHẦN 4 — CHỌN DỮ LIỆU ĐỂ EMBED
+# PHẦN 4 — CHỌN DỮ LIỆU ĐỂ TẠO EMBEDDING
 
 ## 7. Cột nào nên đưa vào embedding?
 
@@ -403,6 +425,8 @@ UpdatedAt      -> Không
 
 ### Ví dụ tạo text đầu vào
 
+Ví dụ ghép những cột có ý nghĩa tìm kiếm thành một chuỗi rõ ràng. Nhãn như “Tiêu đề” và “Nội dung” giúp model hiểu vai trò của từng phần.
+
 ```sql
 SELECT
     ProductId,
@@ -414,7 +438,7 @@ SELECT
 FROM dbo.Products;
 ```
 
-### Không nên embed dữ liệu nào?
+### Không nên đưa dữ liệu nào vào embedding?
 
 - Primary key/timestamps thuần kỹ thuật.
 - Dữ liệu PII/secret nếu không có nhu cầu và approval rõ ràng.
@@ -425,9 +449,9 @@ FROM dbo.Products;
 
 ---
 
-# 📘 PHẦN 5 — CHUNKING
+# PHẦN 5 — CHIA TÀI LIỆU THÀNH CÁC ĐOẠN NHỎ
 
-## 8. Vì sao phải chunk?
+## 8. Vì sao phải chia tài liệu thành đoạn nhỏ (chunk)?
 
 Một tài liệu dài nếu embed nguyên khối có các vấn đề:
 
@@ -436,7 +460,7 @@ Một tài liệu dài nếu embed nguyên khối có các vấn đề:
 3. Khi chỉ một đoạn thay đổi, phải re-embed cả tài liệu.
 4. RAG phải gửi context quá lớn cho LLM.
 
-### Trade-off chunk size
+### Đánh đổi khi chọn kích thước đoạn
 
 | Chunk | Ưu điểm | Nhược điểm |
 |---|---|---|
@@ -444,7 +468,7 @@ Một tài liệu dài nếu embed nguyên khối có các vấn đề:
 | Vừa phải | Cân bằng context + precision | Thường tốt nhất |
 | Quá lớn | Giữ nhiều context | Semantic signal loãng, tốn token |
 
-### Overlap
+### Phần nội dung chồng lấn (overlap)
 
 Overlap giúp ý nghĩa không bị “cắt đôi” ở biên chunk, nhưng:
 
@@ -455,7 +479,7 @@ Overlap giúp ý nghĩa không bị “cắt đôi” ở biên chunk, nhưng:
 
 ---
 
-## 9. `AI_GENERATE_CHUNKS` — syntax cần biết
+## 9. `AI_GENERATE_CHUNKS` — cú pháp cần biết
 
 `AI_GENERATE_CHUNKS` là **table-valued function**.
 
@@ -478,7 +502,9 @@ AI_GENERATE_CHUNKS
 - `OVERLAP` là **phần trăm**, integer từ 0 đến 50; không phải “số token overlap”.
 - Output hữu ích gồm `chunk`, `chunk_order`, `chunk_offset`, `chunk_length`; có thể có `chunk_set_id` khi bật.
 
-### Kiểm tra compatibility
+### Kiểm tra mức tương thích
+
+`AI_GENERATE_CHUNKS` cần compatibility level phù hợp. Hãy kiểm tra trước khi cho rằng lỗi đến từ cú pháp.
 
 ```sql
 SELECT name, compatibility_level
@@ -493,7 +519,9 @@ GO
 
 ---
 
-## 10. Lab: chunk một tài liệu bằng native function
+## 10. Bài thực hành: chia tài liệu bằng hàm tích hợp
+
+Ví dụ đưa một văn bản vào `AI_GENERATE_CHUNKS` và nhận nhiều dòng, mỗi dòng chứa thứ tự chunk và nội dung chunk.
 
 ```sql
 -- ============================================================
@@ -522,7 +550,9 @@ ORDER BY c.chunk_order;
 GO
 ```
 
-### Chunk nhiều dòng bằng `CROSS APPLY`
+### Chia nhiều dòng thành các đoạn bằng `CROSS APPLY`
+
+`CROSS APPLY` gọi hàm tạo chunk cho từng tài liệu, nhờ đó một dòng tài liệu có thể mở rộng thành nhiều dòng chunk.
 
 ```sql
 CREATE TABLE dbo.Documents
@@ -560,7 +590,7 @@ GO
 
 ---
 
-# 📘 PHẦN 6 — GENERATE EMBEDDINGS
+# PHẦN 6 — SINH EMBEDDING
 
 ## 11. `AI_GENERATE_EMBEDDINGS`
 
@@ -579,6 +609,8 @@ Nó dùng external model đã đăng ký trong database để sinh vector embedd
 
 ### Sinh một embedding
 
+Lệnh sau gửi một đoạn văn bản qua external model đã đăng ký và nhận lại một vector có số chiều cố định.
+
 ```sql
 DECLARE @Embedding vector(1536);
 
@@ -592,7 +624,7 @@ SELECT @Embedding AS Embedding;
 GO
 ```
 
-### Override parameter khi endpoint hỗ trợ
+### Ghi đè tham số khi endpoint hỗ trợ
 
 ```sql
 DECLARE @Embedding vector(768);
@@ -610,7 +642,9 @@ GO
 
 ---
 
-## 12. Lab end-to-end: Documents → chunks → embeddings
+## 12. Bài thực hành hoàn chỉnh: tài liệu → đoạn nhỏ → embedding
+
+Bài này nối toàn bộ chuỗi xử lý: tạo bảng tài liệu, chia nội dung thành chunk, sinh embedding và lưu vector cùng metadata để chuẩn bị cho tìm kiếm.
 
 ```sql
 -- ============================================================
@@ -675,15 +709,15 @@ GO
 
 ---
 
-# 📘 PHẦN 7 — EMBEDDING MAINTENANCE
+# PHẦN 7 — CẬP NHẬT EMBEDDING KHI DỮ LIỆU THAY ĐỔI
 
-## 13. Vì sao phải maintain embeddings?
+## 13. Vì sao phải cập nhật embedding theo dữ liệu nguồn?
 
 Nếu source text thay đổi nhưng embedding cũ không đổi, semantic search sẽ trả về **stale meaning**.
 
 Bạn cần quyết định giữa **synchronous** và **asynchronous maintenance**.
 
-### Decision matrix cần thuộc
+### Bảng chọn cơ chế cập nhật
 
 | Phương pháp | Khi nên dùng | Ưu điểm | Nhược điểm |
 |---|---|---|---|
@@ -691,20 +725,20 @@ Bạn cần quyết định giữa **synchronous** và **asynchronous maintenanc
 | **Change Tracking** | Chỉ cần biết row nào đổi để re-process | Nhẹ | Không giữ đầy đủ before/after values |
 | **CDC** | Cần lịch sử change chi tiết, downstream ETL/event process | Giàu dữ liệu change | Phức tạp/overhead hơn CT |
 | **Azure Functions SQL trigger binding** | Serverless/event-driven re-embedding | Tách workload khỏi transaction | Cần Functions runtime |
-| **Azure Logic Apps** | Low-code orchestration | Dễ tích hợp workflow | Không phải lựa chọn tối ưu cho ultra-high-throughput |
+| **Azure Logic Apps** | Điều phối ít code | Dễ tích hợp quy trình nghiệp vụ | Không tối ưu cho lưu lượng cực cao |
 | **CES** | Near-real-time stream DML changes đến Azure Event Hubs | CloudEvents JSON/Avro, phù hợp event-driven architecture | **Preview**; SQL Server 2025 cần `PREVIEW_FEATURES`; Azure SQL DB/MI không cần bật preview config nhưng vẫn là Preview feature |
-| **Microsoft Foundry workflow** | AI orchestration/model lifecycle | Tích hợp hệ sinh thái AI | Cần quản lý service bên ngoài SQL |
+| **Quy trình Microsoft Foundry** | Điều phối AI và vòng đời model | Tích hợp hệ sinh thái AI | Cần quản lý dịch vụ bên ngoài SQL |
 
 ### Quy tắc chọn nhanh
 
 - **High-write OLTP** → ưu tiên asynchronous pipeline (CT/CDC/CES + worker/Function).
 - **Low-volume, strict immediate consistency** → trigger có thể phù hợp, nhưng tránh network inference dài trong transaction.
-- **Low-code business workflow** → Logic Apps.
+- **Quy trình nghiệp vụ ít code** → Logic Apps.
 - **Event streaming near-real-time** → CES.
 
 ---
 
-## 14. Mẫu “dirty flag” an toàn hơn gọi AI trong trigger
+## 14. Mẫu “cờ đánh dấu cần cập nhật” an toàn hơn việc gọi AI trong trigger
 
 Trigger chỉ đánh dấu dòng cần re-embed, worker xử lý sau:
 
@@ -738,13 +772,13 @@ Worker/SQL job/Azure Function có thể đọc các dòng `EmbeddingNeedsRefresh
 
 Trong production nên lưu thêm `ContentHash`, tên/version model, dimensions và `EmbeddedAt`. Worker chỉ reset dirty flag sau khi embedding mới đã ghi thành công; dùng idempotency/retry để một change được xử lý lặp lại vẫn không làm hỏng dữ liệu. Khi đổi model hoặc dimension, tạo version/cột mới và re-embed toàn bộ corpus trước khi chuyển query traffic.
 
-> **Exam trap:** Trigger **có thể** là maintenance method, nhưng gọi remote AI synchronous cho hàng nghìn updates/giờ thường là lựa chọn xấu vì kéo dài transaction và tăng blocking/latency.
+> **Bẫy thường gặp trong đề:** Trigger **có thể** đánh dấu dữ liệu cần cập nhật, nhưng gọi AI từ xa theo kiểu đồng bộ cho hàng nghìn lần cập nhật mỗi giờ thường là lựa chọn xấu vì kéo dài transaction, tăng blocking và độ trễ.
 
 ---
 
-# 📘 PHẦN 8 — TROUBLESHOOTING & OBSERVABILITY
+# PHẦN 8 — CHẨN ĐOÁN VÀ QUAN SÁT
 
-## 15. Khi embedding generation lỗi, kiểm tra gì?
+## 15. Khi quá trình tạo embedding lỗi, cần kiểm tra gì?
 
 1. External model tồn tại chưa?
 2. Credential đúng chưa?
@@ -771,7 +805,7 @@ Trong production nên lưu thêm `ContentHash`, tên/version model, dimensions v
 
 ---
 
-# 🧠 PHẦN 9 — EXAM TRAPS
+# PHẦN 9 — BẪY THƯỜNG GẶP TRONG ĐỀ
 
 ## 16. Các bẫy rất dễ sai
 
@@ -781,32 +815,32 @@ Sai. Phải xét quality, latency, cost, dimension, language và workload.
 ### Bẫy 2 — `VECTOR(3072)`
 Native `VECTOR` hiện tối đa 1,998 dimensions. Không tạo cột vượt giới hạn chỉ vì model mặc định có output lớn.
 
-### Bẫy 3 — `AI_GENERATE_CHUNKS` overlap là số token
+### Bẫy 3 — phần chồng lấn của `AI_GENERATE_CHUNKS` được tính bằng số token
 Sai. Trong syntax hiện hành, overlap là **percentage 0–50**; `CHUNK_SIZE` là characters.
 
 ### Bẫy 4 — Semantic/paragraph chunking là tham số hiện có của `AI_GENERATE_CHUNKS`
 Sai. Conceptually semantic chunking là chiến lược tốt, nhưng function hiện hành hỗ trợ `CHUNK_TYPE = FIXED`.
 
-### Bẫy 5 — Embed mọi cột
+### Bẫy 5 — đưa mọi cột vào embedding
 Sai. Embed semantic content; giữ IDs/price/status/date ở metadata/filter layer.
 
-### Bẫy 6 — Update text nhưng không update embedding
+### Bẫy 6 — cập nhật văn bản nhưng không cập nhật embedding
 Sai. Đây là stale embedding; cần maintenance strategy.
 
-### Bẫy 7 — Gọi AI synchronous trong trigger của high-write OLTP
+### Bẫy 7 — gọi AI đồng bộ trong trigger của hệ thống OLTP ghi dữ liệu nhiều
 Thường là đáp án kém nhất vì network call kéo dài transaction.
 
-### Bẫy 8 — Trộn embedding model/version trong cùng search space
+### Bẫy 8 — trộn model hoặc phiên bản embedding trong cùng không gian tìm kiếm
 Sai. Corpus và query phải được embed bằng cùng model/version/dimension; đổi model thường đòi hỏi re-embed và cutover có kiểm soát.
 
-### Bẫy 9 — `CREATE EXTERNAL MODEL` đăng ký generation model cho structured output
-Sai trong cú pháp SQL hiện hành: `MODEL_TYPE` đang nhận `EMBEDDINGS`. Structured output của generation model thuộc REST/RAG workflow, không phải native external-model type khác.
+### Bẫy 9 — dùng `CREATE EXTERNAL MODEL` để đăng ký model sinh nội dung có đầu ra cấu trúc
+Sai trong cú pháp SQL hiện hành: `MODEL_TYPE` đang nhận `EMBEDDINGS`. Đầu ra có cấu trúc của model sinh nội dung thuộc quy trình REST/RAG, không phải một loại external model tích hợp khác.
 
 ---
 
-# 📝 PHẦN 10 — MOCK QUESTIONS
+# PHẦN 10 — CÂU HỎI TỰ KIỂM TRA
 
-## Question 1 — Native vector limit
+## Câu 1 — Giới hạn của vector tích hợp
 Một deployment trả embedding mặc định 3,072 dimensions. Bạn muốn lưu trực tiếp vào native vector column của SQL Server 2025. Giải pháp phù hợp nhất là gì?
 
 - A. Tạo `VECTOR(3072)`.
@@ -818,7 +852,7 @@ Một deployment trả embedding mặc định 3,072 dimensions. Bạn muốn l�
 
 ---
 
-## Question 2 — Chunking syntax
+## Câu 2 — Cú pháp chia đoạn
 Bạn cần chunk text bằng native SQL AI function và muốn 20% overlap. Cách hiểu nào đúng?
 
 - A. `OVERLAP = 20` nghĩa là 20 tokens.
@@ -830,7 +864,7 @@ Bạn cần chunk text bằng native SQL AI function và muốn 20% overlap. Cá
 
 ---
 
-## Question 3 — High-write embedding maintenance
+## Câu 3 — Cập nhật embedding trong hệ thống ghi nhiều
 Catalog có hàng nghìn update/giờ. Embedding phải được cập nhật nhưng không được làm chậm transaction chính. Chọn giải pháp tốt nhất:
 
 - A. `AFTER UPDATE` trigger gọi AI endpoint trực tiếp.
@@ -842,7 +876,7 @@ Catalog có hàng nghìn update/giờ. Embedding phải được cập nhật nh
 
 ---
 
-## Question 4 — External model syntax
+## Câu 4 — Cú pháp model bên ngoài
 Thuộc tính nào mô tả loại model object dùng cho embedding trong `CREATE EXTERNAL MODEL`?
 
 - A. `MODEL_TYPE = EMBEDDINGS`
@@ -854,7 +888,7 @@ Thuộc tính nào mô tả loại model object dùng cho embedding trong `CREAT
 
 ---
 
-## Question 5 — Column selection
+## Câu 5 — Chọn cột dữ liệu
 Bảng sản phẩm gồm `ProductId`, `SKU`, `Name`, `Description`, `Category`, `Price`, `UpdatedAt`. Semantic search theo mô tả sản phẩm nên ưu tiên embed:
 
 - A. `ProductId + UpdatedAt`
@@ -866,7 +900,7 @@ Bảng sản phẩm gồm `ProductId`, `SKU`, `Name`, `Description`, `Category`,
 
 ---
 
-# ✅ PHẦN 11 — CHECKLIST “TÔI ĐÃ NẮM CHẮC FILE 08 CHƯA?”
+# PHẦN 11 — DANH SÁCH TỰ KIỂM TRA
 
 Bạn chỉ nên coi phần này là đã vững khi có thể trả lời **không nhìn tài liệu**:
 
@@ -890,7 +924,7 @@ Bạn chỉ nên coi phần này là đã vững khi có thể trả lời **kh�
 
 ---
 
-# 🔗 PHẦN 12 — TÀI LIỆU THAM KHẢO CHÍNH THỨC
+# PHẦN 12 — TÀI LIỆU THAM KHẢO CHÍNH THỨC
 
 > Các liên kết dưới đây nên được ưu tiên hơn blog/cheat-sheet không chính thức vì syntax AI/Vector thay đổi khá nhanh.
 
@@ -913,4 +947,4 @@ Bạn chỉ nên coi phần này là đã vững khi có thể trả lời **kh�
 
 ## Ghi chú cập nhật
 
-Tài liệu này cố tình phân biệt rõ **GA vs Preview** và tránh “đóng đinh” các API-version cloud dễ thay đổi. Khi lab với Azure OpenAI/Microsoft Foundry, hãy lấy endpoint và API version đang được hỗ trợ trực tiếp từ resource hiện tại của bạn.
+Tài liệu này cố tình phân biệt rõ **GA và Preview** và tránh “đóng đinh” các phiên bản API đám mây dễ thay đổi. Khi thực hành với Azure OpenAI/Microsoft Foundry, hãy lấy endpoint và phiên bản API đang được hỗ trợ trực tiếp từ tài nguyên hiện tại của bạn.

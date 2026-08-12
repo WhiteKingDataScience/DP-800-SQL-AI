@@ -1,14 +1,29 @@
-# DP-800 Domain 2: Integrate SQL Solutions with Azure Services
+# DP-800 Miền 2 — Tích hợp giải pháp SQL với dịch vụ Azure
 
-> **Miền 2:** Secure, Optimize, and Deploy Database Solutions (35–40%)  
-> **Chủ đề:** Integrate SQL solutions with Azure services  
+> **Miền 2:** Bảo mật, tối ưu và triển khai giải pháp cơ sở dữ liệu (35–40%)  
+> **Chủ đề:** Data API Builder, Azure Monitor và xử lý thay đổi dữ liệu  
 > **Ưu tiên cá nhân:** **Score Weak Point #2**  
 > **Blueprint:** DP-800 — Skills measured as of **March 12, 2026**  
 > **Rà soát:** **12/08/2026**  
-> **Mục tiêu:** Biến phần Azure Integration từ “nhớ tên dịch vụ” thành bài **requirement → technology → reason**.
+> **Mục tiêu:** Biến phần tích hợp Azure từ “nhớ tên dịch vụ” thành cách suy nghĩ **yêu cầu → công nghệ → lý do**.
 
 > [!IMPORTANT]
-> Đây là phần bạn nên ưu tiên hands-on nhiều nhất. Đừng học Azure lan man. DP-800 tập trung vào: **Data API builder (DAB), Azure Monitor, và các data-change/event patterns**.
+> Đây là phần bạn nên ưu tiên tự tay thực hành nhiều nhất. Đừng học Azure lan man. DP-800 tập trung vào **Data API Builder (DAB), Azure Monitor và các cơ chế xử lý thay đổi/sự kiện dữ liệu**.
+
+## Chương này giúp bạn nối SQL với thế giới bên ngoài như thế nào?
+
+Database hiếm khi hoạt động một mình. Ứng dụng cần đọc dữ liệu qua API, đội vận hành cần log và cảnh báo, còn các hệ thống khác cần biết khi dữ liệu vừa thay đổi.
+
+Ví dụ, một cửa hàng trực tuyến muốn:
+
+- ứng dụng di động đọc sản phẩm qua REST;
+- trang quản trị lấy đúng các trường cần thiết qua GraphQL;
+- stored procedure được mở thành một thao tác API có kiểm soát;
+- Application Insights ghi lại request chậm hoặc lỗi;
+- khi đơn hàng đổi trạng thái, Azure Function hoặc Event Hubs nhận được thay đổi gần thời gian thực;
+- mọi kết nối dùng Microsoft Entra ID/Managed Identity thay vì password lưu trong file cấu hình.
+
+Chương này chia bài toán thành bốn hộp: **mở dữ liệu qua API, quan sát hệ thống, phản ứng với thay đổi và xác thực an toàn**. Khi đọc đề, hãy xác định đề đang hỏi hộp nào trước khi nhìn tên dịch vụ.
 
 ---
 
@@ -26,23 +41,23 @@ Theo [DP-800 Study Guide](https://learn.microsoft.com/en-us/credentials/certific
 
 ---
 
-# PHẦN A — AZURE INTEGRATION MENTAL MODEL
+# PHẦN A — CÁCH HÌNH DUNG VIỆC TÍCH HỢP AZURE
 
 ## 2. Chỉ cần 4 hộp
 
 ```text
-1. API / expose SQL
+1. Mở SQL qua API
    → Data API builder
 
-2. Observe / diagnose
+2. Quan sát và chẩn đoán
    → Azure Monitor
       ├─ Application Insights
       └─ Log Analytics
 
-3. Detect/react to data changes
+3. Phát hiện và phản ứng với thay đổi dữ liệu
    → CT / CDC / Functions SQL Trigger / CES / Logic Apps
 
-4. Authenticate securely
+4. Xác thực an toàn
    → Microsoft Entra ID / Managed Identity / least privilege
 ```
 
@@ -76,10 +91,10 @@ Entities + permissions + mappings
 SQL table / view / stored procedure
 ```
 
-### Exam keywords
+### Dấu hiệu nhận biết trong đề
 
 - “Expose SQL through REST/GraphQL”
-- “Minimal custom backend code”
+- “Cần rất ít mã backend tùy chỉnh”
 - “Entity/relationship”
 - “Stored procedure as endpoint”
 - “Caching/pagination/filtering”
@@ -103,9 +118,11 @@ DAB 2.0 đã GA vào tháng 06/2026. Các điểm nên nhận diện:
 
 ---
 
-# PHẦN C — DAB LAB TỪ ZERO
+# PHẦN C — BÀI THỰC HÀNH DAB TỪ CON SỐ 0
 
-## 5. Tạo database objects
+## 5. Tạo các đối tượng trong cơ sở dữ liệu
+
+Bài thực hành dùng một bảng, một view và một stored procedure nhỏ để bạn thấy DAB ánh xạ từng loại đối tượng SQL thành API như thế nào.
 
 ```sql
 CREATE TABLE dbo.Customers
@@ -168,7 +185,7 @@ DATABASE_CONNECTION_STRING=Server=localhost;Database=DP800Lab;Trusted_Connection
 
 ---
 
-## 7. Init config
+## 7. Khởi tạo file cấu hình
 
 ```bash
 dab init \
@@ -206,7 +223,9 @@ dab add GetOrderById \
 
 # PHẦN D — REST
 
-## 8. REST endpoint mental model
+## 8. Cách hình dung REST endpoint
+
+Sơ đồ sau cho thấy URL REST đi qua DAB entity và permission trước khi trở thành truy vấn SQL; client không kết nối trực tiếp vào database.
 
 ```text
 GET    /api/Customer
@@ -216,9 +235,9 @@ PATCH  /api/Order/<key>
 DELETE /api/Order/<key>
 ```
 
-### Current REST query options quan trọng
+### Các tùy chọn truy vấn REST hiện hành
 
-| Requirement | DAB REST |
+| Yêu cầu | DAB REST |
 |---|---|
 | Project fields | `$select` |
 | Filter | `$filter` |
@@ -248,13 +267,13 @@ Nguồn:
 
 # PHẦN E — GRAPHQL
 
-## 9. GraphQL dùng khi nào?
+## 9. Khi nào dùng GraphQL?
 
 - Client muốn query shape linh hoạt.
 - Cần nested relationships.
 - Muốn lấy Customer + Orders trong một query.
 
-Mental model:
+Cách hình dung:
 
 ```text
 Customer
@@ -281,11 +300,11 @@ query {
 }
 ```
 
-## 10. Relationship
+## 10. Khai báo mối quan hệ giữa các entity
 
 Trong DAB, relationship mô tả entity relationship để GraphQL có thể navigation giữa objects.
 
-Exam clue:
+Dấu hiệu nhận biết trong đề:
 
 > “Expose Customer and its related Orders through GraphQL.”
 
@@ -293,7 +312,7 @@ Exam clue:
 
 ---
 
-# PHẦN F — STORED PROCEDURES VÀ VIEWS
+# PHẦN F — STORED PROCEDURE VÀ VIEW
 
 ## 11. View
 
@@ -305,25 +324,25 @@ SQL View → DAB entity → REST/GraphQL read
 
 ## 12. Stored procedure
 
-Use case:
+Trường hợp sử dụng:
 
 - business logic đã có trong DB;
 - muốn endpoint gọi operation có kiểm soát;
-- không muốn rewrite SP thành app code.
+- không muốn viết lại stored procedure thành mã ứng dụng.
 
 ```text
 Stored procedure → DAB entity → execute / HTTP endpoint
 ```
 
-DAB 2.0 còn có thể dùng stored procedure entity như custom MCP tool trong scenario AI agent.
+DAB 2.0 còn có thể dùng một stored procedure đã khai báo thành entity như công cụ MCP tùy chỉnh trong tình huống AI agent.
 
 ---
 
-# PHẦN G — DAB SECURITY
+# PHẦN G — BẢO MẬT DAB
 
 Nguồn: [Microsoft Entra ID authentication for DAB](https://learn.microsoft.com/en-us/azure/data-api-builder/concept/security/authenticate-entra)
 
-## 13. Hai authentication layers
+## 13. Hai lớp xác thực
 
 ```text
 Client → DAB
@@ -338,7 +357,7 @@ DAB → Azure SQL
 - **client authentication**: ai gọi API?
 - **database identity**: DAB kết nối SQL bằng ai?
 
-### Good pattern
+### Cách làm nên dùng
 
 ```text
 Client → Entra token → DAB
@@ -349,9 +368,9 @@ Và database vẫn cấp least privilege cho Managed Identity.
 
 ---
 
-# PHẦN H — DAB CACHING
+# PHẦN H — BỘ NHỚ ĐỆM CỦA DAB
 
-## 14. Cache mental model
+## 14. Cách hình dung bộ nhớ đệm
 
 DAB 2.0 hỗ trợ:
 
@@ -378,7 +397,7 @@ Ví dụ entity:
 }
 ```
 
-### Khi dùng cache?
+### Khi nào dùng bộ nhớ đệm?
 
 - read-heavy;
 - dữ liệu không đổi quá nhanh;
@@ -390,9 +409,9 @@ Cache không phải giải pháp cho mọi query. Nếu dữ liệu phải luôn
 
 ---
 
-# PHẦN I — DAB DEPLOYMENT
+# PHẦN I — TRIỂN KHAI DAB
 
-## 15. Hosting
+## 15. Chọn nơi chạy ứng dụng
 
 Các lựa chọn thường gặp:
 
@@ -409,7 +428,7 @@ COPY dab-config.json /App/dab-config.json
 
 Production nên pin version/tag theo release policy.
 
-## 16. Secrets
+## 16. Quản lý bí mật
 
 Không hardcode production secret trong `dab-config.json`.
 
@@ -425,7 +444,9 @@ Dùng:
 
 Nguồn: [Microsoft Learn — Recommend Azure Monitor configurations](https://learn.microsoft.com/en-us/training/modules/integrate-sql-solutions-azure-services/6-recommend-azure-monitor-configurations)
 
-## 17. Mental model
+## 17. Cách hình dung Azure Monitor
+
+Luồng sau tách ba khái niệm: ứng dụng phát telemetry, Azure Monitor thu nhận, còn Log Analytics lưu và cho phép truy vấn log.
 
 ```text
 Application / DAB / Azure SQL
@@ -444,7 +465,7 @@ exceptions
 
 ## 18. Application Insights
 
-Chọn khi requirement nói:
+Chọn khi yêu cầu nói:
 
 - application/API requests;
 - latency;
@@ -480,7 +501,7 @@ dependencies
 
 ---
 
-## 19. Log Analytics
+## 19. Phân tích nhật ký với Log Analytics
 
 Chọn khi:
 
@@ -489,7 +510,7 @@ Chọn khi:
 - KQL analytics;
 - operational troubleshooting.
 
-Exam clue:
+Dấu hiệu nhận biết trong đề:
 
 > “Query centralized diagnostic logs with KQL.”
 
@@ -497,9 +518,9 @@ Exam clue:
 
 ---
 
-## 20. Alerts
+## 20. Cảnh báo
 
-Requirement:
+Yêu cầu:
 
 > “Notify operations when error/latency exceeds threshold.”
 
@@ -507,17 +528,17 @@ Requirement:
 
 ---
 
-# PHẦN K — HANDLE DATA CHANGES
+# PHẦN K — XỬ LÝ THAY ĐỔI DỮ LIỆU
 
-## 21. Decision matrix phải thuộc
+## 21. Bảng chọn cơ chế theo yêu cầu
 
-| Requirement | Chọn |
+| Yêu cầu | Chọn |
 |---|---|
 | Chỉ cần biết row/key nào thay đổi | **Change Tracking** |
 | Cần change data/history/before-after cho ETL | **CDC** |
-| Khi row đổi phải chạy serverless code | **Azure Functions SQL trigger** |
+| Khi một dòng thay đổi phải chạy mã không máy chủ | **Azure Functions SQL trigger** |
 | Cần stream change events near-real-time | **CES** |
-| Low-code workflow, connector nhiều dịch vụ | **Logic Apps** |
+| Quy trình ít mã, cần kết nối tới nhiều dịch vụ | **Logic Apps** |
 
 ---
 
@@ -525,7 +546,9 @@ Requirement:
 
 Nguồn: [Change Tracking](https://learn.microsoft.com/en-us/sql/relational-databases/track-changes/about-change-tracking-sql-server?view=sql-server-ver17)
 
-## 22. Enable CT
+## 22. Bật Change Tracking
+
+Hai lệnh sau bật Change Tracking ở cấp database rồi ở cấp bảng. Bật database nhưng quên bật bảng sẽ không theo dõi được thay đổi của bảng đó.
 
 ```sql
 ALTER DATABASE DP800Lab
@@ -541,7 +564,9 @@ ENABLE CHANGE_TRACKING;
 GO
 ```
 
-## 23. Query changes
+## 23. Truy vấn các thay đổi
+
+Client lưu `SYS_CHANGE_VERSION` đã xử lý gần nhất, rồi truyền version đó vào `CHANGETABLE` để lấy các khóa vừa thay đổi.
 
 ```sql
 DECLARE @last_sync_version bigint = 0;
@@ -572,7 +597,9 @@ GO
 
 Nguồn: [Change Data Capture](https://learn.microsoft.com/en-us/sql/relational-databases/track-changes/about-change-data-capture-sql-server?view=sql-server-ver17)
 
-## 24. Enable CDC
+## 24. Bật CDC
+
+CDC cũng phải được bật ở hai cấp. Khác Change Tracking, CDC giữ dữ liệu thay đổi chi tiết hơn trong các change table.
 
 ```sql
 EXEC sys.sp_cdc_enable_db;
@@ -586,7 +613,9 @@ EXEC sys.sp_cdc_enable_table
 GO
 ```
 
-## 25. Query CDC
+## 25. Truy vấn dữ liệu CDC
+
+Ví dụ xác định khoảng LSN rồi đọc các thay đổi trong khoảng đó. Consumer phải lưu checkpoint để lần sau đọc tiếp thay vì xử lý lại toàn bộ.
 
 ```sql
 DECLARE @from_lsn binary(10),
@@ -605,7 +634,7 @@ FROM cdc.fn_cdc_get_all_changes_dbo_Orders
 GO
 ```
 
-### Chọn CDC khi
+### Khi nào chọn CDC?
 
 - ETL/ELT;
 - cần change rows;
@@ -618,7 +647,7 @@ GO
 
 Nguồn: [Azure SQL trigger for Functions](https://learn.microsoft.com/en-us/azure/azure-functions/functions-bindings-azure-sql-trigger)
 
-## 26. Trap quan trọng
+## 26. Bẫy quan trọng
 
 > **Azure Functions SQL trigger sử dụng SQL Change Tracking.**
 
@@ -626,7 +655,7 @@ Nó dùng polling loop nội bộ; bạn không phải tự viết polling.
 
 Vì vậy phải enable CT trên database + table.
 
-## 27. C# isolated worker example
+## 27. Ví dụ C# isolated worker
 
 ```csharp
 using Microsoft.Azure.Functions.Worker;
@@ -706,13 +735,13 @@ Nguồn:
 
 CES đọc data changes và stream near-real-time tới Azure Event Hubs. Events dùng CloudEvents, với JSON hoặc Avro Binary tùy cấu hình.
 
-Use case:
+Trường hợp sử dụng:
 
 - event-driven systems;
 - near-real-time integration;
 - push/streaming thay vì consumer polling change table.
 
-## 30. Platform note — rất quan trọng
+## 30. Lưu ý theo nền tảng — rất quan trọng
 
 Microsoft documentation đang thay đổi nhanh:
 
@@ -720,13 +749,15 @@ Microsoft documentation đang thay đổi nhanh:
 - Một số trang liên quan, ví dụ AMQP deprecation, cũng nhắc **SQL database in Microsoft Fabric**.
 - Fabric **Eventstream** có thể đóng vai trò destination/custom endpoint cho SQL change events.
 
-### Exam strategy
+### Cách suy luận trong đề
 
 1. Nếu đề nêu platform cụ thể, chỉ chọn capability được hỗ trợ cho platform đó trong wording/docs hiện hành.
 2. Không suy diễn “Fabric Eventstream là destination” = “mọi Fabric SQL surface đều là CES source”.
 3. Với Preview feature, đọc `Applies to`/limitations nếu có quyền tra Microsoft Learn trong exam.
 
 ## 31. CES vs CDC
+
+Khối minh họa dưới đây giúp phân biệt: CDC lưu thay đổi để consumer chủ động đọc; CES đẩy sự kiện gần thời gian thực tới Event Hubs.
 
 ```text
 CDC
@@ -740,7 +771,7 @@ CES
   → event-driven integration
 ```
 
-## 32. Delivery semantics
+## 32. Cơ chế giao nhận sự kiện
 
 CES là **at least once** → downstream consumer phải idempotent/deduplicate nếu cần.
 
@@ -748,7 +779,7 @@ CES là stream, không phải một history store vô hạn.
 
 ---
 
-## 33. Breaking change ngày 15/08/2026
+## 33. Thay đổi không tương thích từ ngày 15/08/2026
 
 Từ **15/08/2026**, Microsoft yêu cầu **new stream groups** dùng:
 
@@ -769,7 +800,7 @@ Kafka publisher dùng port `9093`.
 
 ### Trước ngày 15/08/2026
 
-Repo/lab cũ có thể vẫn thấy:
+Kho mã nguồn hoặc bài thực hành cũ có thể vẫn dùng:
 
 ```text
 AzureEventHubsApacheKafka
@@ -783,11 +814,11 @@ Dùng:
 AzureEventHubs
 ```
 
-> Tài liệu này được rà soát ngày **12/08/2026**, ba ngày trước breaking change. Nếu bạn chạy lab sau 15/08, dùng syntax mới và kiểm tra trang deprecation/configure.
+> Tài liệu này được rà soát ngày **12/08/2026**, ba ngày trước thay đổi không tương thích. Nếu bạn thực hành sau 15/08, hãy dùng cú pháp mới và kiểm tra trang thông báo ngừng hỗ trợ/cấu hình.
 
 ---
 
-## 34. CES lab concept — syntax sau 15/08/2026
+## 34. Bài thực hành CES — cú pháp sau 15/08/2026
 
 ```sql
 -- SQL Server 2025: cần FULL recovery + PREVIEW_FEATURES.
@@ -827,7 +858,7 @@ Managed Identity cần quyền gửi đúng Azure Event Hubs destination, áp d�
 
 ## 35. Khi nào chọn?
 
-- low-code/no-code workflow;
+- quy trình ít mã hoặc không cần viết mã;
 - nhiều connector;
 - approval/email/SaaS orchestration;
 - business process automation.
@@ -846,11 +877,13 @@ Create Teams notification
 Call another SaaS/API
 ```
 
-Nếu requirement nói “run C# serverless code when SQL row changes” → **Azure Functions SQL trigger**, không phải Logic Apps.
+Nếu yêu cầu nói “chạy mã C# không máy chủ khi một dòng SQL thay đổi” → chọn **Azure Functions SQL trigger**, không phải Logic Apps.
 
 ---
 
-# PHẦN Q — DECISION TREE 30 GIÂY
+# PHẦN Q — CÂY CHỌN GIẢI PHÁP TRONG 30 GIÂY
+
+Đọc từ câu hỏi nghiệp vụ ở trên xuống. Mỗi nhánh dẫn tới công nghệ phù hợp nhất với yêu cầu nổi bật, nhưng vẫn phải kiểm tra bảo mật và nền tảng.
 
 ```text
 Question mentions Azure integration
@@ -878,13 +911,13 @@ What is the goal?
           +-- Stream events near real-time?
           |       → CES
           |
-          +-- Low-code workflow/connectors?
+          +-- Quy trình ít code, cần nhiều connector?
                   → Logic Apps
 ```
 
 ---
 
-# PHẦN R — EXAM TRAPS
+# PHẦN R — BẪY THƯỜNG GẶP TRONG ĐỀ
 
 1. **DAB pagination không học `$skip/$top` như pattern hiện hành** → nhớ `$first/$after`.
 2. **DAB ≠ public anonymous API mặc định an toàn** → cần auth/roles/permissions.
@@ -899,10 +932,10 @@ What is the goal?
 
 ---
 
-# PHẦN S — MOCK SCENARIOS
+# PHẦN S — TÌNH HUỐNG TỰ KIỂM TRA
 
 ### Q1
-Cần expose tables, views và SP qua REST/GraphQL với ít backend code.  
+Cần mở bảng, view và stored procedure qua REST/GraphQL với rất ít mã backend.  
 **Đáp án:** DAB.
 
 ### Q2
@@ -942,7 +975,7 @@ Cần stream DML events near-real-time tới Event Hubs.
 **Đáp án:** CES.
 
 ### Q11
-Business muốn workflow low-code: khi order mới → approval → Teams/email.  
+Doanh nghiệp muốn quy trình ít mã: khi có đơn hàng mới → phê duyệt → gửi Teams/email.  
 **Đáp án:** Logic Apps.
 
 ### Q12
@@ -959,11 +992,11 @@ Từ 15/08/2026 tạo CES stream group mới.
 
 ### Q15
 Read-heavy endpoint scale-out, cần shared cache.  
-**Đáp án:** DAB L1L2/distributed L2 scenario nếu phù hợp.
+**Đáp án:** DAB L1L2 hoặc bộ nhớ đệm L2 phân tán, nếu phù hợp với tình huống.
 
 ---
 
-# PHẦN T — HANDS-ON CHECKLIST
+# PHẦN T — DANH SÁCH BÀI THỰC HÀNH
 
 Chỉ đánh dấu khi **tự làm không nhìn tài liệu**:
 
@@ -982,13 +1015,13 @@ Chỉ đánh dấu khi **tự làm không nhìn tài liệu**:
 - [ ] Giải thích L1 vs L1L2 cache.
 - [ ] Mô tả deployment lên Container Apps/App Service.
 
-## Monitoring
+## Giám sát
 - [ ] Phân biệt Application Insights vs Log Analytics.
 - [ ] Viết một KQL query cho requests.
 - [ ] Viết một KQL query cho SQL dependencies.
 - [ ] Biết alert rule + action group dùng khi nào.
 
-## Data changes
+## Thay đổi dữ liệu
 - [ ] Enable Change Tracking.
 - [ ] Query `CHANGETABLE`.
 - [ ] Enable CDC.
@@ -1004,7 +1037,9 @@ Chỉ đánh dấu khi **tự làm không nhìn tài liệu**:
 
 ---
 
-# PHẦN U — CHEAT SHEET
+# PHẦN U — BẢNG GHI NHỚ NHANH
+
+Đây là bản tóm tắt cuối chương để ôn lại tên công nghệ và dấu hiệu nhận biết; nó không thay thế bài thực hành.
 
 ```text
 REST + GraphQL + SQL       -> DAB
@@ -1043,7 +1078,7 @@ Fabric Eventstream         -> can be destination; don't infer every Fabric SQL s
 - [Entities](https://learn.microsoft.com/en-us/azure/data-api-builder/configuration/entities)
 - [Entra authentication](https://learn.microsoft.com/en-us/azure/data-api-builder/concept/security/authenticate-entra)
 
-## Data changes
+## Thay đổi dữ liệu
 - [Change Tracking](https://learn.microsoft.com/en-us/sql/relational-databases/track-changes/about-change-tracking-sql-server?view=sql-server-ver17)
 - [CDC](https://learn.microsoft.com/en-us/sql/relational-databases/track-changes/about-change-data-capture-sql-server?view=sql-server-ver17)
 - [Azure SQL trigger for Functions](https://learn.microsoft.com/en-us/azure/azure-functions/functions-bindings-azure-sql-trigger)
@@ -1054,4 +1089,4 @@ Fabric Eventstream         -> can be destination; don't infer every Fabric SQL s
 
 ---
 
-> **Kết luận học:** Nếu bạn chỉ đọc definitions DAB/CDC/CT/CES thì vẫn dễ sai. Chỉ coi phần này hoàn tất khi bạn đọc một scenario và trong 10–20 giây xác định được **goal → service → tại sao không chọn 2–3 công nghệ gần giống**.
+> **Kết luận học:** Nếu bạn chỉ đọc định nghĩa DAB/CDC/CT/CES thì vẫn dễ sai. Chỉ coi phần này hoàn tất khi bạn đọc một tình huống và trong 10–20 giây xác định được **mục tiêu → dịch vụ phù hợp → tại sao không chọn 2–3 công nghệ gần giống**.
