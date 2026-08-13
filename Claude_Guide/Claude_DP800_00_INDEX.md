@@ -9,9 +9,33 @@
 > | `D1` | **Miền 1** — Thiết kế & phát triển giải pháp CSDL (35–40%) |
 > | `D2` | **Miền 2** — Bảo mật, tối ưu hoá & triển khai (35–40%) |
 > | `D3` | **Miền 3** — Triển khai khả năng AI (25–30%) |
+> | `D4` | **Bổ sung** — Hàm Regex (SQL Server 2025 / Fabric) |
+> | `D5` | **Bổ sung** — Tích hợp Azure, AI-Assisted Tools & các chủ đề thiếu |
 > | `Guide` | Cẩm nang lý thuyết (đọc trước) |
 > | `LabNN` | Bài thực hành SQL chạy được (làm sau khi đọc guide) |
 > | `Quiz` | Bộ câu hỏi tự kiểm tra kèm giải thích (làm cuối cùng) |
+
+---
+
+## 📊 PHÂN TÍCH ĐIỂM MẠNH & ĐIỂM YẾU KIẾN THỨC
+
+### 1. Các vùng kiến thức trọng tâm cần củng cố:
+
+| # | Vùng kiến thức cần ưu tiên | Thuộc miền | Tài liệu học bổ sung |
+|---|---|---|---|
+| 1 | **Design and implement SQL solutions by using AI-assisted tools** | D3 + D5 | [D5 — Phần B: AI-Assisted Tools](./Claude_DP800_D5_Azure_AITools_Guide.md) |
+| 2 | **Integrate SQL solutions with Azure services** | D2 + D5 | [D5 — Phần A: Azure Integration](./Claude_DP800_D5_Azure_AITools_Guide.md) |
+| 3 | **Design and implement database objects** | D1 | Ôn lại D1 Guide + Lab |
+
+### 2. Chi tiết phân tích điểm yếu & giải pháp:
+
+| Điểm yếu kiến thức | Mô tả chi tiết | Tài liệu học tập |
+|---|---|---|
+| **Tích hợp Azure Services** | Chưa nắm chắc cơ chế Data API Builder (DAB), Azure Functions SQL Trigger, Change Tracking, Managed Identity và Private Endpoint | [D5 — DAB, Azure Functions, Managed Identity, Fabric](./Claude_DP800_D5_Azure_AITools_Guide.md) |
+| **Xử lý chuỗi bằng Regular Expression (Regex)** | Chưa hiểu và chưa sử dụng chính xác các hàm regex trong SQL Server 2025 (`REGEXP_LIKE`, `REGEXP_REPLACE`, `REGEXP_SUBSTR`, `REGEXP_COUNT`, `REGEXP_INSTR`) | [D4 — Cẩm nang Hàm Regex đầy đủ + 20 câu quiz](./Claude_DP800_D4_Regex_Guide.md) |
+| **Công cụ hỗ trợ AI (AI-Assisted Tools)** | Cấu hình MCP Server, GitHub Copilot Chat settings, bảo mật prompt schema-only | [D5 — Phần B: MCP Server & Copilot Chat](./Claude_DP800_D5_Azure_AITools_Guide.md) |
+
+> 💡 **Lộ trình học tập đề xuất:** Học tài liệu bổ sung D4 (Regex) và D5 (Azure Integration & AI Tools) TRƯỚC để lấp đầy các lỗ hổng kiến thức cốt lõi, sau đó ôn luyện hệ thống các miền D1, D2, D3.
 
 ---
 
@@ -61,14 +85,36 @@
 
 ---
 
-## 🗺️ LỘ TRÌNH ÔN TỔNG THỂ (18 ngày)
+## 🔧 BỔ SUNG D4 — HÀM REGEX (SQL SERVER 2025 / FABRIC)
+
+*REGEXP_LIKE, REGEXP_REPLACE, REGEXP_SUBSTR, REGEXP_INSTR, REGEXP_COUNT, REGEXP_MATCHES, EDIT_DISTANCE*
+
+| File | Nội dung |
+|---|---|
+| [Claude_DP800_D4_Regex_Guide.md](./Claude_DP800_D4_Regex_Guide.md) | **Cẩm nang Regex** — 6 hàm regex cốt lõi, bảng ký hiệu regex, pattern phổ biến đề thi, kết hợp JSON + regex, fuzzy matching, **20 câu quiz** |
+
+---
+
+## 🔧 BỔ SUNG D5 — TÍCH HỢP AZURE, AI-ASSISTED TOOLS & CHỦ ĐỀ THIẾU
+
+*DAB, Azure Functions SQL Trigger, Managed Identity, MCP Server, SQL Graph, CI/CD, Blocking Chain, Transaction Isolation, Embedding Maintenance, Fabric*
+
+| File | Nội dung |
+|---|---|
+| [Claude_DP800_D5_Azure_AITools_Guide.md](./Claude_DP800_D5_Azure_AITools_Guide.md) | **Cẩm nang bổ sung** — 10 phần: DAB config, Azure Functions trigger, Managed Identity, Private Endpoint, GitHub Copilot, MCP Server, SQL Graph MATCH, CI/CD pipeline, Blocking chain analysis, Transaction isolation levels, ONNX local model, Fabric GraphQL, **15 câu quiz** |
+
+---
+
+## 🗺️ LỘ TRÌNH ÔN THI LẦN 2 (ƯU TIÊN ĐIỂM YẾU)
 
 | Giai đoạn | Ngày | Việc cần làm |
 |---|---|---|
-| **Miền 1** | 1–7 | Guide D1 → Lab 01…05 → Quiz D1 |
-| **Miền 2** | 8–14 | Guide D2 → Lab 01…05 → Quiz D2 |
-| **Miền 3** | 15–18 | Guide D3 → Lab 01…03 → Quiz D3 |
-| **Tổng ôn** | 19 | Làm lại cả 3 quiz, đọc lại 3 bảng "quyết định nhanh" |
+| **⭐ Điểm yếu trước** | 1–2 | **D4 Regex Guide** (đọc + làm 20 câu quiz) |
+| **⭐ Điểm yếu trước** | 3–5 | **D5 Azure & AI Tools Guide** (đọc + làm 15 câu quiz) |
+| **Miền 1** | 6–9 | Guide D1 → Lab 01…05 → Quiz D1 (ôn lại nhanh) |
+| **Miền 2** | 10–13 | Guide D2 → Lab 01…05 → Quiz D2 (ôn lại nhanh) |
+| **Miền 3** | 14–16 | Guide D3 → Lab 01…03 → Quiz D3 (ôn lại nhanh) |
+| **Tổng ôn** | 17 | Làm lại tất cả quiz (D1–D5), đọc lại các bảng "quyết định nhanh" + cheat sheet |
 
 **Thứ tự trong mỗi miền:** Guide (hiểu) → Lab (làm) → Quiz (kiểm tra) → đọc lại phần sai.
 
@@ -117,10 +163,12 @@ nên mọi script vẫn chạy trọn vẹn trên SQL Server 2019:
 
 ---
 
-## 📄 CÁC FILE KHÁC TRONG THƯ MỤC (không do Claude tạo)
+## 📄 CÁC FILE KHÁC TRONG THƯ MỤC
 
 | File | Ghi chú |
 |---|---|
+| `DP-800 score.pdf` | Báo cáo phân tích đánh giá kỹ năng cá nhân |
+| `DP-800 question test.pdf` | Bộ 147 câu hỏi luyện thi (tham khảo) |
 | `DP-800ExamRequirements260515.pdf` | Yêu cầu kỳ thi chính thức |
 | `DP-800Notes260612.pdf`, `DP-800CodeUsed260610.pdf` | Tài liệu khoá học |
 | `Antigravity_*`, `Codex_*` | Tài liệu do công cụ khác tạo |
